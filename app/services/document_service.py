@@ -2,10 +2,8 @@ import os
 
 from werkzeug.datastructures import FileStorage
 
+from app.config import Config
 from app.factories.document_processor_factory import DocumentProcessorFactory
-
-
-UPLOAD_FOLDER = "uploads"
 
 
 class DocumentService:
@@ -21,9 +19,6 @@ class DocumentService:
 
         Returns:
             dict: Processing result data.
-
-        Raises:
-            RuntimeError: Propagated from processor on failure.
         """
         extension = self._get_extension(file.filename)
         file_path = self._save(file, extension)
@@ -36,7 +31,7 @@ class DocumentService:
 
     def _get_extension(self, filename: str) -> str:
         """
-        Extract and return lowercase file extension.
+        Extract lowercase file extension.
 
         Args:
             filename (str): Original filename.
@@ -48,7 +43,7 @@ class DocumentService:
 
     def _save(self, file: FileStorage, extension: str) -> str:
         """
-        Save uploaded file to the uploads folder.
+        Save uploaded file temporarily to disk.
 
         Args:
             file (FileStorage): File to save.
@@ -57,8 +52,8 @@ class DocumentService:
         Returns:
             str: Absolute path to the saved file.
         """
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-        file_path = os.path.join(UPLOAD_FOLDER, f"temp_{os.getpid()}.{extension}")
+        os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+        file_path = os.path.join(Config.UPLOAD_FOLDER, f"temp_{os.getpid()}.{extension}")
         file.save(file_path)
         return file_path
 
@@ -67,7 +62,7 @@ class DocumentService:
         Delete temporary file after processing.
 
         Args:
-            file_path (str): Path to the file to remove.
+            file_path (str): Path to remove.
         """
         if os.path.exists(file_path):
             os.remove(file_path)
