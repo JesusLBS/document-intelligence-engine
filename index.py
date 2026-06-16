@@ -1,8 +1,12 @@
 from flask import Flask
+from dotenv import load_dotenv
 
 from app.routes.routes import api
 
+load_dotenv()
+
 app = Flask(__name__)
+app.json.sort_keys = False
 
 app.register_blueprint(
     api,

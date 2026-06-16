@@ -1,20 +1,23 @@
 import fitz  # PyMuPDF
 
 from app.processors.base.base_processor import BaseProcessor
-
+from datetime import datetime
 
 class PdfProcessor(BaseProcessor):
     """PDF document processor using PyMuPDF."""
 
     def process(self, file_path: str) -> dict:
         """
-        Process a PDF file and return structured diagnostic data.
+        Process a PDF file and return structured data.
 
         Args:
             file_path (str): Absolute path to the PDF file.
 
         Returns:
-            dict: Structured processing result with diagnostic metadata.
+            dict: Structured processing result.
+
+        Raises:
+            RuntimeError: If PDF processing fails.
         """
         try:
             doc = fitz.open(file_path)
@@ -27,26 +30,21 @@ class PdfProcessor(BaseProcessor):
 
             diagnosis = self._build_diagnosis(has_text, pages_analysis)
 
-            return self.build_response(
-                success=True,
-                data={
-                    "fileType": "pdf",
-                    "pages": pages,
-                    "hasText": has_text,
-                    "isScanned": not has_text,
-                    "processingMethod": "text_extraction" if has_text else "ocr_required",
-                    "text": extracted_text.strip() if has_text else None,
-                    "metadata": metadata,
-                    "pagesAnalysis": pages_analysis,
-                    "diagnosis": diagnosis,
-                },
-            )
+            return {
+                "fileType": "pdf",
+                "pages": pages,
+                "hasText": has_text,
+                "isScanned": not has_text,
+                "processingMethod": "text_extraction" if has_text else "ocr_required",
+                "text": extracted_text.strip() if has_text else None,
+                "extractedFields": None,
+                "metadata": metadata,
+                "pagesAnalysis": pages_analysis,
+                "diagnosis": diagnosis,
+            }
 
         except Exception as e:
-            return self.build_response(
-                success=False,
-                errors=[str(e)],
-            )
+            raise RuntimeError(f"PDF processing failed: {str(e)}") from e
 
     def _extract_text(self, doc: fitz.Document) -> str:
         """
@@ -60,6 +58,25 @@ class PdfProcessor(BaseProcessor):
         """
         return "".join(page.get_text() for page in doc)
 
+    def _parse_pdf_date(self, raw: str) -> str | None:
+        """
+        Convert PDF date string to ISO 8601 format.
+
+        Args:
+            raw (str): Raw PDF date e.g. D:20230105190725-06'00'
+
+        Returns:
+            str | None: ISO 8601 date string or None if unparseable.
+        """
+        if not raw or not raw.startswith("D:"):
+            return None
+        try:
+            raw = raw[2:]  # strip D:
+            dt = datetime.strptime(raw[:14], "%Y%m%d%H%M%S")
+            return dt.isoformat()
+        except ValueError:
+            return None
+        
     def _extract_metadata(self, doc: fitz.Document) -> dict:
         """
         Extract PDF document metadata.
@@ -76,8 +93,8 @@ class PdfProcessor(BaseProcessor):
             "author": raw.get("author") or None,
             "creator": raw.get("creator") or None,
             "producer": raw.get("producer") or None,
-            "creationDate": raw.get("creationDate") or None,
-            "modDate": raw.get("modDate") or None,
+            "creationDate": self._parse_pdf_date(raw.get("creationDate")),
+            "modDate": self._parse_pdf_date(raw.get("modDate")),
         }
 
     def _analyze_pages(self, doc: fitz.Document) -> list[dict]:

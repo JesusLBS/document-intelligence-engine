@@ -1,5 +1,6 @@
 from flask import request
 
+from app.helpers.response_helper import ResponseHelper
 from app.services.document_service import DocumentService
 
 
@@ -9,21 +10,27 @@ class DocumentController:
     def __init__(self):
         self.document_service = DocumentService()
 
-    def health(self) -> dict:
+    def health(self) -> tuple:
         """
         Health check endpoint.
 
         Returns:
-            dict
+            tuple: Flask JSON response and status code.
         """
-        return self.document_service.health()
+        return ResponseHelper.success(
+            data={"message": "Document Intelligence Engine is running"}
+        )
 
-    def process(self) -> tuple[dict, int]:
+    def process(self) -> tuple:
         """
         Handle document upload and processing.
 
         Returns:
-            tuple[dict, int]: JSON response and HTTP status code.
+            tuple: Flask JSON response and status code.
         """
-        file = request.files.get("file")
-        return self.document_service.process(file)
+        try:
+            file = request.files.get("file")
+            result = self.document_service.process(file)
+            return ResponseHelper.success(data=result)
+        except Exception as e:
+            return ResponseHelper.error(exc=e)
