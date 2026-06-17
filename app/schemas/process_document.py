@@ -12,7 +12,7 @@ class ProcessDocumentSchema(Schema):
     requested_fields = fields.List(fields.Str(), load_default=[], data_key="fields")
     extractor = fields.Str(load_default=Config.DEFAULT_EXTRACTOR)
     language = fields.Str(load_default=Config.DEFAULT_LANGUAGE)
-    options = fields.Dict(load_default={})
+    include_raw_text = fields.Bool(load_default=True)
 
     @validates("file")
     def validate_file(self, value):

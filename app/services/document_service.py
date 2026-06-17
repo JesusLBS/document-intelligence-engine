@@ -4,28 +4,38 @@ from werkzeug.datastructures import FileStorage
 
 from app.config import Config
 from app.factories.document_processor_factory import DocumentProcessorFactory
+from app.factories.extractor_factory import ExtractorFactory
+from app.utils.case_converter import dict_to_camel_case
 
 
 class DocumentService:
     """Orchestrates document processing flow."""
 
-    def process(self, file: FileStorage) -> dict:
+    def process(self, file: FileStorage, document_type: str, requested_fields: list[str]) -> dict:
         """
-        Save and process an uploaded document.
-        File is already validated at route level.
+        Save, process and extract data from an uploaded document.
 
         Args:
             file (FileStorage): Validated uploaded file.
+            document_type (str): Type of document (e.g. 'csf').
+            requested_fields (list[str]): Fields requested by client.
 
         Returns:
-            dict: Processing result data.
+            dict: Processing result with extracted fields in camelCase.
         """
         extension = self._get_extension(file.filename)
         file_path = self._save(file, extension)
 
         try:
             processor = DocumentProcessorFactory.make(extension)
-            return processor.process(file_path)
+            processor_result = processor.process(file_path)
+
+            extractor = ExtractorFactory.make(document_type)
+            raw_text = processor_result.get("text") or ""
+            extracted = extractor.extract(raw_text, requested_fields)
+
+            processor_result["extractedFields"] = dict_to_camel_case(extracted)
+            return processor_result
         finally:
             self._cleanup(file_path)
 

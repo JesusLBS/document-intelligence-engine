@@ -23,7 +23,11 @@ def validate(schema: Schema):
             if request.is_json:
                 data.update(request.get_json(silent=True) or {})
             else:
-                data.update(request.form.to_dict())
+                form_data = {}
+                for key, value in request.form.lists():
+                    clean_key = key.rstrip("[]")
+                    form_data[clean_key] = value if len(value) > 1 or clean_key == "fields" else value[0]
+                data.update(form_data)
 
             data.update(request.args.to_dict())
 
