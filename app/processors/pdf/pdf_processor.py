@@ -16,35 +16,29 @@ class PdfProcessor(BaseProcessor):
         Returns:
             dict: Structured processing result.
 
-        Raises:
-            RuntimeError: If PDF processing fails.
         """
-        try:
-            doc = fitz.open(file_path)
-            pages = len(doc)
-            metadata = self._extract_metadata(doc)
-            pages_analysis = self._analyze_pages(doc)
-            extracted_text = self._extract_text(doc)
-            has_text = bool(extracted_text.strip())
-            doc.close()
+        doc = fitz.open(file_path)
+        pages = len(doc)
+        metadata = self._extract_metadata(doc)
+        pages_analysis = self._analyze_pages(doc)
+        extracted_text = self._extract_text(doc)
+        has_text = bool(extracted_text.strip())
+        doc.close()
 
-            diagnosis = self._build_diagnosis(has_text, pages_analysis)
+        diagnosis = self._build_diagnosis(has_text, pages_analysis)
 
-            return {
-                "fileType": "pdf",
-                "pages": pages,
-                "hasText": has_text,
-                "isScanned": not has_text,
-                "processingMethod": "text_extraction" if has_text else "ocr_required",
-                "text": extracted_text.strip() if has_text else None,
-                "extractedFields": None,
-                "metadata": metadata,
-                "pagesAnalysis": pages_analysis,
-                "diagnosis": diagnosis,
-            }
-
-        except Exception as e:
-            raise RuntimeError(f"PDF processing failed: {str(e)}") from e
+        return {
+            "fileType": "pdf",
+            "pages": pages,
+            "hasText": has_text,
+            "isScanned": not has_text,
+            "processingMethod": "text_extraction" if has_text else "ocr_required",
+            "text": extracted_text.strip() if has_text else None,
+            "extractedFields": None,
+            "metadata": metadata,
+            "pagesAnalysis": pages_analysis,
+            "diagnosis": diagnosis,
+        }
 
     def _extract_text(self, doc: fitz.Document) -> str:
         """

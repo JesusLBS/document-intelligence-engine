@@ -1,5 +1,7 @@
 from app.extractors.base_extractor import BaseExtractor
 from app.extractors.csf_extractor import CsfExtractor
+from app.exceptions.extractor_not_found_exception import ExtractorNotFoundException
+
 
 
 EXTRACTOR_MAP = {
@@ -27,6 +29,6 @@ class ExtractorFactory:
         extractor_class = EXTRACTOR_MAP.get(document_type.lower())
 
         if not extractor_class:
-            raise ValueError(f"No extractor registered for document type: '{document_type}'")
+            raise ExtractorNotFoundException(document_type)
 
         return extractor_class()

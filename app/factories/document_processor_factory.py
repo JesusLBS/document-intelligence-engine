@@ -1,5 +1,6 @@
 from app.contracts.document_processor_interface import DocumentProcessorInterface
 from app.processors.pdf.pdf_processor import PdfProcessor
+from app.exceptions.processor_not_found_exception import ProcessorNotFoundException
 
 PROCESSOR_MAP = {
     "pdf": PdfProcessor,
@@ -26,6 +27,6 @@ class DocumentProcessorFactory:
         processor_class = PROCESSOR_MAP.get(file_type.lower())
 
         if not processor_class:
-            raise ValueError(f"No processor registered for file type: '{file_type}'")
+            raise ProcessorNotFoundException(file_type)
 
         return processor_class()

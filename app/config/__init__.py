@@ -12,6 +12,7 @@ class Config:
     APP_ENV: str = os.getenv("APP_ENV", "local")
     APP_DEBUG: bool = os.getenv("APP_DEBUG", "false").lower() == "true"
     TZ: str = os.getenv("TZ", "America/Mexico_City")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     # File processing
     MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", 10))

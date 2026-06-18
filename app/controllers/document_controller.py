@@ -28,17 +28,9 @@ class DocumentController:
         Returns:
             tuple: Flask JSON response and status code.
         """
-        try:
-            file = request.files.get("file")
-            document_type = request.form.get("document_type")
-            requested_fields = request.form.getlist("fields")
-            include_raw_text = request.form.get("include_raw_text", "true").lower() == "true"
+        file = request.files.get("file")
+        document_type = request.form.get("document_type")
+        requested_fields = request.form.getlist("fields")
 
-            result = self.document_service.process(file, document_type, requested_fields)
-
-            if not include_raw_text:
-                result["text"] = None
-
-            return ResponseHelper.success(data=result)
-        except Exception as e:
-            return ResponseHelper.error(exc=e)
+        result = self.document_service.process(file, document_type, requested_fields)
+        return ResponseHelper.success(data=result)
