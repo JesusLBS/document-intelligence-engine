@@ -1,13 +1,14 @@
 from app.extractors.base_extractor import BaseExtractor
 from app.extractors.csf_extractor import CsfExtractor
+from app.extractors.ine_extractor import IneExtractor
 from app.extractors.comprobante_domicilio_extractor import ComprobanteDomicilioExtractor
 from app.exceptions.extractor_not_found_exception import ExtractorNotFoundException
-
 
 
 EXTRACTOR_MAP = {
     "csf": CsfExtractor,
     "comprobante_domicilio": ComprobanteDomicilioExtractor,
+    "ine": IneExtractor,
 }
 
 

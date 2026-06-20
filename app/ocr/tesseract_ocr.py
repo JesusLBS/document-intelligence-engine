@@ -1,6 +1,8 @@
 import os
-
+import cv2
+import numpy as np
 import pytesseract
+
 from pdf2image import convert_from_path
 from PIL import Image
 
@@ -61,15 +63,46 @@ class TesseractOcr(BaseOcr):
 
     def _preprocess(self, image: Image.Image) -> Image.Image:
         """
-        Preprocess image to improve OCR accuracy.
+        Preprocess image using OpenCV to improve OCR accuracy.
+        Applies grayscale, denoising, contrast enhancement and rotation correction.
 
         Args:
             image (Image.Image): Raw page image.
 
         Returns:
-            Image.Image: Preprocessed grayscale image.
+            Image.Image: Preprocessed image ready for OCR.
         """
-        return image.convert("L")
+
+        # Convert PIL to OpenCV
+        img = np.array(image)
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+
+        # Denoise
+        img = cv2.fastNlMeansDenoising(img, h=30)
+
+        # Contrast enhancement with CLAHE
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        img = clahe.apply(img)
+
+        # Binarization with Otsu threshold
+        _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Rotation correction via deskew
+        coords = np.column_stack(np.where(img < 128))
+        if len(coords) > 0:
+            angle = cv2.minAreaRect(coords)[-1]
+            if angle < -45:
+                angle = -(90 + angle)
+            else:
+                angle = -angle
+            if abs(angle) > 0.5:
+                h, w = img.shape
+                center = (w // 2, h // 2)
+                matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+                img = cv2.warpAffine(img, matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+        # Convert back to PIL
+        return Image.fromarray(img)
 
     def _persist_images(self, images: list[Image.Image], request_id: str) -> None:
         """
