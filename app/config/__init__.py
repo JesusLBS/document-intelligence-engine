@@ -25,7 +25,7 @@ class Config:
     DOCUMENT_TYPES: set = {
         "ine",
         "csf",
-        "recibo_luz",
+        "comprobante_domicilio",
         "estado_cuenta",
         "licencia_profesional",
     }
