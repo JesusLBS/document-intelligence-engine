@@ -11,7 +11,14 @@ from app.utils.case_converter import dict_to_camel_case
 class DocumentService:
     """Orchestrates document processing flow."""
 
-    def process(self, file: FileStorage, document_type: str, requested_fields: list[str]) -> dict:
+    def process(
+        self,
+        file: FileStorage,
+        document_type: str,
+        requested_fields: list[str],
+        from_page: int = None,
+        to_page: int = None,
+    ) -> dict:
         """
         Save, process and extract data from an uploaded document.
 
@@ -19,6 +26,8 @@ class DocumentService:
             file (FileStorage): Validated uploaded file.
             document_type (str): Type of document (e.g. 'csf').
             requested_fields (list[str]): Fields requested by client.
+            from_page (int, optional): Start page (1-indexed).
+            to_page (int, optional): End page (1-indexed).
 
         Returns:
             dict: Processing result with extracted fields in camelCase.
@@ -28,7 +37,7 @@ class DocumentService:
 
         try:
             processor = DocumentProcessorFactory.make(extension)
-            processor_result = processor.process(file_path)
+            processor_result = processor.process(file_path, from_page=from_page, to_page=to_page)
 
             extractor = ExtractorFactory.make(document_type)
             raw_text = processor_result.get("text") or ""

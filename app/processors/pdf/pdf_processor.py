@@ -1,35 +1,70 @@
 import fitz  # PyMuPDF
 
-from app.processors.base.base_processor import BaseProcessor
 from datetime import datetime
+
+from app.exceptions.app_exception import AppException
+from app.processors.base.base_processor import BaseProcessor
+from app.helpers.logger import Logger
+
 
 class PdfProcessor(BaseProcessor):
     """PDF document processor using PyMuPDF."""
 
-    def process(self, file_path: str) -> dict:
+    def process(self, file_path: str, from_page: int = None, to_page: int = None) -> dict:
         """
         Process a PDF file and return structured data.
 
         Args:
             file_path (str): Absolute path to the PDF file.
+            from_page (int, optional): Start page (1-indexed).
+            to_page (int, optional): End page (1-indexed).
 
         Returns:
             dict: Structured processing result.
 
+        Raises:
+            RuntimeError: If the file cannot be opened or processed.
+            AppException: If page range exceeds document page count.
         """
-        doc = fitz.open(file_path)
-        pages = len(doc)
+        try:
+            doc = fitz.open(file_path)
+        except Exception as e:
+            Logger.error("Failed to open PDF file", file=file_path, detail=str(e))
+            raise RuntimeError(f"Could not open file as PDF: {str(e)}") from e
+
+        total_pages = len(doc)
+
+        # Resolve and validate page range
+        start, end = self._resolve_page_range(from_page, to_page, total_pages)
+
         metadata = self._extract_metadata(doc)
-        pages_analysis = self._analyze_pages(doc)
-        extracted_text = self._extract_text(doc)
+        pages_analysis = self._analyze_pages(doc, start, end)
+        extracted_text = self._extract_text(doc, start, end)
         has_text = bool(extracted_text.strip())
         doc.close()
 
         diagnosis = self._build_diagnosis(has_text, pages_analysis)
 
+        if has_text:
+            Logger.info(
+                "PDF processed successfully",
+                pages=f"{start + 1}-{end}",
+                chars=len(extracted_text.strip()),
+                method="text_extraction",
+            )
+        else:
+            Logger.warning(
+                "PDF text extraction failed",
+                pages=f"{start + 1}-{end}",
+                reason=diagnosis["reason"],
+                confidence=diagnosis["confidence"],
+                method="ocr_required",
+            )
+
         return {
             "fileType": "pdf",
-            "pages": pages,
+            "pages": total_pages,
+            "processedPages": {"from": start + 1, "to": end},
             "hasText": has_text,
             "isScanned": not has_text,
             "processingMethod": "text_extraction" if has_text else "ocr_required",
@@ -40,17 +75,51 @@ class PdfProcessor(BaseProcessor):
             "diagnosis": diagnosis,
         }
 
-    def _extract_text(self, doc: fitz.Document) -> str:
+    def _resolve_page_range(self, from_page: int | None, to_page: int | None, total_pages: int) -> tuple[int, int]:
         """
-        Extract embedded text from all pages.
+        Resolve and validate page range against total pages.
+
+        Args:
+            from_page (int | None): Requested start page (1-indexed).
+            to_page (int | None): Requested end page (1-indexed).
+            total_pages (int): Total pages in the document.
+
+        Returns:
+            tuple[int, int]: Zero-indexed start and end (exclusive) for fitz.
+
+        Raises:
+            AppException: If requested range exceeds document pages.
+        """
+        start = (from_page - 1) if from_page else 0
+        end = to_page if to_page else total_pages
+
+        if start >= total_pages:
+            raise AppException(
+                message=f"from_page ({from_page}) exceeds document total pages ({total_pages}).",
+                status_code=422,
+            )
+
+        if end > total_pages:
+            raise AppException(
+                message=f"to_page ({to_page}) exceeds document total pages ({total_pages}).",
+                status_code=422,
+            )
+
+        return start, end
+
+    def _extract_text(self, doc: fitz.Document, start: int, end: int) -> str:
+        """
+        Extract embedded text from page range.
 
         Args:
             doc (fitz.Document): Opened PDF document.
+            start (int): Zero-indexed start page.
+            end (int): Zero-indexed end page (exclusive).
 
         Returns:
-            str: Concatenated text from all pages.
+            str: Concatenated text from selected pages.
         """
-        return "".join(page.get_text() for page in doc)
+        return "".join(doc[i].get_text() for i in range(start, end))
 
     def _parse_pdf_date(self, raw: str) -> str | None:
         """
@@ -65,12 +134,12 @@ class PdfProcessor(BaseProcessor):
         if not raw or not raw.startswith("D:"):
             return None
         try:
-            raw = raw[2:]  # strip D:
+            raw = raw[2:]
             dt = datetime.strptime(raw[:14], "%Y%m%d%H%M%S")
             return dt.isoformat()
         except ValueError:
             return None
-        
+
     def _extract_metadata(self, doc: fitz.Document) -> dict:
         """
         Extract PDF document metadata.
@@ -91,19 +160,22 @@ class PdfProcessor(BaseProcessor):
             "modDate": self._parse_pdf_date(raw.get("modDate")),
         }
 
-    def _analyze_pages(self, doc: fitz.Document) -> list[dict]:
+    def _analyze_pages(self, doc: fitz.Document, start: int, end: int) -> list[dict]:
         """
-        Analyze each page: text blocks, images, fonts and character count.
+        Analyze pages within range: text blocks, images, fonts and character count.
 
         Args:
             doc (fitz.Document): Opened PDF document.
+            start (int): Zero-indexed start page.
+            end (int): Zero-indexed end page (exclusive).
 
         Returns:
             list[dict]: Per-page diagnostic information.
         """
         analysis = []
 
-        for i, page in enumerate(doc):
+        for i in range(start, end):
+            page = doc[i]
             text = page.get_text()
             raw_dict = page.get_text("rawdict")
             blocks = raw_dict.get("blocks", [])

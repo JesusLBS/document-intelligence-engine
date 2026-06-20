@@ -2,7 +2,7 @@ from flask import request
 
 from app.helpers.response_helper import ResponseHelper
 from app.services.document_service import DocumentService
-import json
+
 
 class DocumentController:
     """Handle incoming document requests."""
@@ -31,6 +31,18 @@ class DocumentController:
         file = request.files.get("file")
         document_type = request.form.get("document_type")
         requested_fields = request.form.getlist("fields")
+        include_raw_text = request.form.get("include_raw_text", "true").lower() == "true"
 
-        result = self.document_service.process(file, document_type, requested_fields)
+        from_page = request.form.get("from_page")
+        to_page = request.form.get("to_page")
+        from_page = int(from_page) if from_page else None
+        to_page = int(to_page) if to_page else None
+
+        result = self.document_service.process(
+            file, document_type, requested_fields, from_page=from_page, to_page=to_page
+        )
+
+        if not include_raw_text:
+            result["text"] = None
+
         return ResponseHelper.success(data=result)

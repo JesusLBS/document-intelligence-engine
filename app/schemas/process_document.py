@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, validates, ValidationError
+from marshmallow import Schema, fields, validates, validates_schema, ValidationError
 from werkzeug.datastructures import FileStorage
 
 from app.config import Config
@@ -13,6 +13,8 @@ class ProcessDocumentSchema(Schema):
     extractor = fields.Str(load_default=Config.DEFAULT_EXTRACTOR)
     language = fields.Str(load_default=Config.DEFAULT_LANGUAGE)
     include_raw_text = fields.Bool(load_default=True)
+    from_page = fields.Int(load_default=None, allow_none=True)
+    to_page = fields.Int(load_default=None, allow_none=True)
 
     @validates("file")
     def validate_file(self, value):
@@ -61,3 +63,26 @@ class ProcessDocumentSchema(Schema):
                 f"Document type '{value}' is not supported. "
                 f"Allowed: {', '.join(sorted(Config.DOCUMENT_TYPES))}."
             )
+
+    @validates_schema
+    def validate_page_range(self, data, **kwargs):
+        """
+        Validate from_page and to_page logical consistency.
+
+        Args:
+            data (dict): Deserialized schema data.
+
+        Raises:
+            ValidationError: If page range is invalid.
+        """
+        from_page = data.get("from_page")
+        to_page = data.get("to_page")
+
+        if from_page is not None and from_page < 1:
+            raise ValidationError({"from_page": ["Page number must be >= 1."]})
+
+        if to_page is not None and to_page < 1:
+            raise ValidationError({"to_page": ["Page number must be >= 1."]})
+
+        if from_page and to_page and from_page > to_page:
+            raise ValidationError({"from_page": ["from_page cannot be greater than to_page."]})
