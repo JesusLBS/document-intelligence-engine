@@ -15,6 +15,8 @@ class ProcessDocumentSchema(Schema):
     include_raw_text = fields.Bool(load_default=True)
     from_page = fields.Int(load_default=None, allow_none=True)
     to_page = fields.Int(load_default=None, allow_none=True)
+    force_ocr = fields.Bool(load_default=False)
+    debug_mode = fields.Bool(load_default=False)
 
     @validates("file")
     def validate_file(self, value):

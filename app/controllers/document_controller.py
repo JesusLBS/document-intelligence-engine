@@ -32,6 +32,8 @@ class DocumentController:
         document_type = request.form.get("document_type")
         requested_fields = request.form.getlist("fields")
         include_raw_text = request.form.get("include_raw_text", "true").lower() == "true"
+        force_ocr = request.form.get("force_ocr", "false").lower() == "true"
+        debug_mode = request.form.get("debug_mode", "false").lower() == "true"
 
         from_page = request.form.get("from_page")
         to_page = request.form.get("to_page")
@@ -39,7 +41,13 @@ class DocumentController:
         to_page = int(to_page) if to_page else None
 
         result = self.document_service.process(
-            file, document_type, requested_fields, from_page=from_page, to_page=to_page
+            file=file,
+            document_type=document_type,
+            requested_fields=requested_fields,
+            from_page=from_page,
+            to_page=to_page,
+            force_ocr=force_ocr,
+            debug_mode=debug_mode,
         )
 
         if not include_raw_text:

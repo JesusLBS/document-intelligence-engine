@@ -34,6 +34,14 @@ instance/
 uploads/*
 !uploads/.gitkeep
 
+# Debug images / temporary OCR output
+storage/debug/*
+!storage/debug/.gitkeep
+
+# Application logs
+storage/logs/*
+!storage/logs/.gitkeep
+
 # macOS specific files
 .DS_Store
 .DS_Store?

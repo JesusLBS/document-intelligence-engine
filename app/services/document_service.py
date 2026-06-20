@@ -1,11 +1,17 @@
 import os
+import uuid
 
 from werkzeug.datastructures import FileStorage
 
 from app.config import Config
 from app.factories.document_processor_factory import DocumentProcessorFactory
 from app.factories.extractor_factory import ExtractorFactory
+from app.ocr.tesseract_ocr import TesseractOcr
 from app.utils.case_converter import dict_to_camel_case
+
+
+OCR_REASONS = {"low_text_density", "partial_text_extraction", "scanned_image_pdf",
+               "text_rendered_as_paths", "corrupt_or_proprietary_encoding"}
 
 
 class DocumentService:
@@ -18,6 +24,8 @@ class DocumentService:
         requested_fields: list[str],
         from_page: int = None,
         to_page: int = None,
+        force_ocr: bool = False,
+        debug_mode: bool = False,
     ) -> dict:
         """
         Save, process and extract data from an uploaded document.
@@ -28,24 +36,39 @@ class DocumentService:
             requested_fields (list[str]): Fields requested by client.
             from_page (int, optional): Start page (1-indexed).
             to_page (int, optional): End page (1-indexed).
+            force_ocr (bool): Skip evaluation and use OCR directly.
+            debug_mode (bool): Persist debug images to disk.
 
         Returns:
             dict: Processing result with extracted fields in camelCase.
         """
         extension = self._get_extension(file.filename)
         file_path = self._save(file, extension)
+        request_id = str(uuid.uuid4())
 
         try:
             processor = DocumentProcessorFactory.make(extension)
             processor_result = processor.process(file_path, from_page=from_page, to_page=to_page)
 
+            needs_ocr = force_ocr or processor_result.get("processingMethod") == "ocr_required"
+            processor_result["ocrRequired"] = needs_ocr
+
+            if needs_ocr:
+                ocr = TesseractOcr()
+                ocr_text = ocr.extract_text(
+                    file_path,
+                    from_page=from_page,
+                    to_page=to_page,
+                    debug_mode=debug_mode,
+                    request_id=request_id,
+                )
+                processor_result["text"] = ocr_text
+                processor_result["processingMethod"] = "ocr"
+
             extractor = ExtractorFactory.make(document_type)
             raw_text = processor_result.get("text") or ""
             extracted = extractor.extract(raw_text, requested_fields)
-            processor_result = processor.process(file_path, from_page=from_page, to_page=to_page)
 
-            # Flag for downstream OCR decision
-            processor_result["ocrRequired"] = processor_result.get("processingMethod") == "ocr_required"
             processor_result["extractedFields"] = dict_to_camel_case(extracted)
             return processor_result
         finally:
