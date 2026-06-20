@@ -45,21 +45,19 @@ class PdfProcessor(BaseProcessor):
 
         diagnosis = self._build_diagnosis(has_text, pages_analysis)
 
-        if has_text:
-            Logger.info(
-                "PDF processed successfully",
-                pages=f"{start + 1}-{end}",
-                chars=len(extracted_text.strip()),
-                method="text_extraction",
-            )
-        else:
-            Logger.warning(
-                "PDF text extraction failed",
-                pages=f"{start + 1}-{end}",
-                reason=diagnosis["reason"],
-                confidence=diagnosis["confidence"],
-                method="ocr_required",
-            )
+        OCR_REASONS = {"low_text_density", "partial_text_extraction", "scanned_image_pdf", 
+                    "text_rendered_as_paths", "corrupt_or_proprietary_encoding"}
+
+        processing_method = "ocr_required" if diagnosis["reason"] in OCR_REASONS else "text_extraction"
+
+        Logger.info(
+            "PDF processed",
+            pages=f"{start + 1}-{end}",
+            chars=len(extracted_text.strip()),
+            method=processing_method,
+            diagnosis=diagnosis["reason"],
+            confidence=diagnosis["confidence"],
+        )
 
         return {
             "fileType": "pdf",
@@ -67,7 +65,7 @@ class PdfProcessor(BaseProcessor):
             "processedPages": {"from": start + 1, "to": end},
             "hasText": has_text,
             "isScanned": not has_text,
-            "processingMethod": "text_extraction" if has_text else "ocr_required",
+            "processingMethod": processing_method,
             "text": extracted_text.strip() if has_text else None,
             "extractedFields": None,
             "metadata": metadata,
@@ -199,31 +197,73 @@ class PdfProcessor(BaseProcessor):
 
     def _build_diagnosis(self, has_text: bool, pages_analysis: list[dict]) -> dict:
         """
-        Build a diagnostic summary explaining why text extraction succeeded or failed.
+        Build a diagnostic summary with scoring based on multiple signals.
 
         Args:
             has_text (bool): Whether any text was extracted.
             pages_analysis (list[dict]): Per-page analysis data.
 
         Returns:
-            dict: Diagnosis with probable cause and confidence level.
+            dict: Diagnosis with reason, confidence, signals and score.
         """
+        total_pages = len(pages_analysis)
+        total_chars = sum(p["charCount"] for p in pages_analysis)
+        total_fonts = sum(p["embeddedFonts"] for p in pages_analysis)
+        total_images = sum(p["embeddedImages"] for p in pages_analysis)
+        total_image_blocks = sum(p["imageBlocksDetected"] for p in pages_analysis)
+        total_text_blocks = sum(p["textBlocksDetected"] for p in pages_analysis)
+        pages_with_text = sum(1 for p in pages_analysis if p["hasText"])
+
+        ratio_text_pages = pages_with_text / total_pages if total_pages > 0 else 0
+        avg_chars_per_page = total_chars / total_pages if total_pages > 0 else 0
+        ratio_text_vs_image = total_chars / (total_image_blocks + 1)
+
+        signals = {
+            "totalChars": total_chars,
+            "totalFonts": total_fonts,
+            "totalImages": total_images,
+            "totalImageBlocks": total_image_blocks,
+            "totalTextBlocks": total_text_blocks,
+            "pagesWithText": pages_with_text,
+            "totalPages": total_pages,
+            "ratioTextPages": round(ratio_text_pages, 2),
+            "avgCharsPerPage": round(avg_chars_per_page, 2),
+            "ratioTextVsImage": round(ratio_text_vs_image, 4),
+        }
+
+        # Low text density — has_text=True but content is insignificant vs images
+        if has_text and avg_chars_per_page < 50 and total_image_blocks > 100:
+            return {
+                "reason": "low_text_density",
+                "detail": "Text was detected but is insignificant compared to image content. OCR recommended.",
+                "confidence": "high",
+                "signals": signals,
+            }
+
+        # Partial extraction — some pages have text, others don't
+        if has_text and ratio_text_pages < 0.5:
+            return {
+                "reason": "partial_text_extraction",
+                "detail": "Only some pages contain extractable text. Document may be partially scanned.",
+                "confidence": "medium",
+                "signals": signals,
+            }
+
         if has_text:
             return {
                 "reason": "embedded_text_found",
                 "detail": "Text was successfully extracted from the PDF.",
                 "confidence": "high",
+                "signals": signals,
             }
 
-        total_fonts = sum(p["embeddedFonts"] for p in pages_analysis)
-        total_images = sum(p["embeddedImages"] for p in pages_analysis)
-        total_text_blocks = sum(p["textBlocksDetected"] for p in pages_analysis)
-
+        # No text — evaluate why
         if total_images > 0 and total_fonts == 0:
             return {
                 "reason": "scanned_image_pdf",
                 "detail": "Pages contain images with no embedded fonts. Likely a scanned document.",
                 "confidence": "high",
+                "signals": signals,
             }
 
         if total_fonts > 0 and total_text_blocks > 0:
@@ -231,6 +271,7 @@ class PdfProcessor(BaseProcessor):
                 "reason": "text_rendered_as_paths",
                 "detail": "Fonts and text blocks detected but no readable text extracted. Text may be rendered as vectors/paths.",
                 "confidence": "medium",
+                "signals": signals,
             }
 
         if total_fonts > 0 and total_text_blocks == 0:
@@ -238,10 +279,12 @@ class PdfProcessor(BaseProcessor):
                 "reason": "corrupt_or_proprietary_encoding",
                 "detail": "Fonts are embedded but no text blocks found. Possible proprietary encoding or corrupt structure.",
                 "confidence": "medium",
+                "signals": signals,
             }
 
         return {
             "reason": "unknown",
             "detail": "Could not determine why text extraction failed.",
             "confidence": "low",
+            "signals": signals,
         }

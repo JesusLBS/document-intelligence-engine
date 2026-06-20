@@ -42,7 +42,10 @@ class DocumentService:
             extractor = ExtractorFactory.make(document_type)
             raw_text = processor_result.get("text") or ""
             extracted = extractor.extract(raw_text, requested_fields)
+            processor_result = processor.process(file_path, from_page=from_page, to_page=to_page)
 
+            # Flag for downstream OCR decision
+            processor_result["ocrRequired"] = processor_result.get("processingMethod") == "ocr_required"
             processor_result["extractedFields"] = dict_to_camel_case(extracted)
             return processor_result
         finally:
