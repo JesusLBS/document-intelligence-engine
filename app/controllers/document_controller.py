@@ -2,7 +2,7 @@ from flask import request
 
 from app.helpers.response_helper import ResponseHelper
 from app.services.document_service import DocumentService
-
+from app.config import Config
 
 class DocumentController:
     """Handle incoming document requests."""
@@ -39,6 +39,8 @@ class DocumentController:
         to_page = request.form.get("to_page")
         from_page = int(from_page) if from_page else None
         to_page = int(to_page) if to_page else None
+        extractor_strategy = request.form.get("extractor", Config.DEFAULT_EXTRACTOR)
+        all_fields = request.form.get("all_fields", "false").lower() == "true"
 
         result = self.document_service.process(
             file=file,
@@ -48,6 +50,8 @@ class DocumentController:
             to_page=to_page,
             force_ocr=force_ocr,
             debug_mode=debug_mode,
+            extractor_strategy=extractor_strategy,
+            all_fields=all_fields,
         )
 
         if not include_raw_text:

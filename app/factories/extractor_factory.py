@@ -1,37 +1,34 @@
 from app.extractors.base_extractor import BaseExtractor
 from app.extractors.csf_extractor import CsfExtractor
-from app.extractors.ine_extractor import IneExtractor
-from app.extractors.comprobante_domicilio_extractor import ComprobanteDomicilioExtractor
+from app.extractors.ai_extractor import AiExtractor
+from app.extractors.passthrough_extractor import PassthroughExtractor
 from app.exceptions.extractor_not_found_exception import ExtractorNotFoundException
-
 
 EXTRACTOR_MAP = {
     "csf": CsfExtractor,
-    "comprobante_domicilio": ComprobanteDomicilioExtractor,
-    "ine": IneExtractor,
 }
 
-
 class ExtractorFactory:
-    """Resolves the correct extractor based on document type."""
+    """Resolves the correct extractor based on document type and strategy."""
 
     @staticmethod
-    def make(document_type: str) -> BaseExtractor:
+    def make(document_type: str, extractor_strategy: str = "regex") -> BaseExtractor:
         """
-        Return extractor instance for the given document type.
+        Return extractor instance for the given document type and strategy.
 
         Args:
             document_type (str): Document type (e.g. 'csf', 'ine').
+            extractor_strategy (str): Strategy from request ('regex' or 'ai').
 
         Returns:
             BaseExtractor: Concrete extractor instance.
-
-        Raises:
-            ValueError: If no extractor is registered for the document type.
         """
+        if extractor_strategy == "ai":
+            return AiExtractor()
+
         extractor_class = EXTRACTOR_MAP.get(document_type.lower())
 
-        if not extractor_class:
-            raise ExtractorNotFoundException(document_type)
+        if extractor_class:
+            return extractor_class()
 
-        return extractor_class()
+        return PassthroughExtractor()

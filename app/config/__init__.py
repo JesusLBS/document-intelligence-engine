@@ -33,3 +33,14 @@ class Config:
     # Extractor
     DEFAULT_EXTRACTOR: str = os.getenv("DEFAULT_EXTRACTOR", "regex")
     DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "es")
+
+    # AI Extractor
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GROQ_API_URL: str = os.getenv("GROQ_API_URL", "")
+
+    DOCUMENT_DEFAULT_FIELDS: dict = {
+        "ine": ["nombre", "apellido_paterno", "apellido_materno", "curp", "fecha_nacimiento", "fecha_vencimiento", "clave_elector"],
+        "csf": ["rfc", "curp", "full_name", "padron_status", "tax_regimes"],
+        "comprobante_domicilio": ["nombre", "direccion", "periodo", "fecha_emision", "empresa"],
+    }

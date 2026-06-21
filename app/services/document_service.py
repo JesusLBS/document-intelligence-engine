@@ -8,10 +8,7 @@ from app.factories.document_processor_factory import DocumentProcessorFactory
 from app.factories.extractor_factory import ExtractorFactory
 from app.ocr.tesseract_ocr import TesseractOcr
 from app.utils.case_converter import dict_to_camel_case
-
-
-OCR_REASONS = {"low_text_density", "partial_text_extraction", "scanned_image_pdf",
-               "text_rendered_as_paths", "corrupt_or_proprietary_encoding"}
+from app.extractors.ai_extractor import AiExtractor
 
 
 class DocumentService:
@@ -26,6 +23,8 @@ class DocumentService:
         to_page: int = None,
         force_ocr: bool = False,
         debug_mode: bool = False,
+        extractor_strategy: str = None,
+        all_fields: bool = False,
     ) -> dict:
         """
         Save, process and extract data from an uploaded document.
@@ -38,6 +37,8 @@ class DocumentService:
             to_page (int, optional): End page (1-indexed).
             force_ocr (bool): Skip evaluation and use OCR directly.
             debug_mode (bool): Persist debug images to disk.
+            extractor_strategy (str): Extractor strategy ('regex' or 'ai').
+            all_fields (bool): If True, extract all available fields ignoring defaults.
 
         Returns:
             dict: Processing result with extracted fields in camelCase.
@@ -45,6 +46,7 @@ class DocumentService:
         extension = self._get_extension(file.filename)
         file_path = self._save(file, extension)
         request_id = str(uuid.uuid4())
+        strategy = extractor_strategy or Config.DEFAULT_EXTRACTOR
 
         try:
             processor = DocumentProcessorFactory.make(extension)
@@ -65,9 +67,28 @@ class DocumentService:
                 processor_result["text"] = ocr_text
                 processor_result["processingMethod"] = "ocr"
 
-            extractor = ExtractorFactory.make(document_type)
+            extractor = ExtractorFactory.make(document_type, extractor_strategy=strategy)
             raw_text = processor_result.get("text") or ""
-            extracted = extractor.extract(raw_text, requested_fields)
+            diagnosis = processor_result.get("diagnosis")
+
+            # Resolve fields to extract
+            if all_fields:
+                fields_to_extract = []
+            elif requested_fields:
+                fields_to_extract = requested_fields
+            else:
+                fields_to_extract = Config.DOCUMENT_DEFAULT_FIELDS.get(document_type, [])
+
+            if isinstance(extractor, AiExtractor):
+                extracted = extractor.extract(
+                    raw_text,
+                    fields_to_extract,
+                    document_type=document_type,
+                    diagnosis=diagnosis,
+                    all_fields=all_fields,
+                )
+            else:
+                extracted = extractor.extract(raw_text, fields_to_extract)
 
             processor_result["extractedFields"] = dict_to_camel_case(extracted)
             return processor_result
