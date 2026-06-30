@@ -18,6 +18,7 @@ class ProcessDocumentSchema(Schema):
     force_ocr = fields.Bool(load_default=False)
     debug_mode = fields.Bool(load_default=False)
     all_fields = fields.Bool(load_default=False)
+    provider = fields.Str(load_default=None, allow_none=True)
 
     @validates("file")
     def validate_file(self, value):

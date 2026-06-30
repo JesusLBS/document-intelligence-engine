@@ -25,6 +25,7 @@ class DocumentService:
         debug_mode: bool = False,
         extractor_strategy: str = None,
         all_fields: bool = False,
+        provider: str = None,
     ) -> dict:
         """
         Save, process and extract data from an uploaded document.
@@ -38,7 +39,8 @@ class DocumentService:
             force_ocr (bool): Skip evaluation and use OCR directly.
             debug_mode (bool): Persist debug images to disk.
             extractor_strategy (str): Extractor strategy ('regex' or 'ai').
-            all_fields (bool): If True, extract all available fields ignoring defaults.
+            all_fields (bool): If True, extract all available fields.
+            provider (str, optional): AI provider override ('gemini', 'groq').
 
         Returns:
             dict: Processing result with extracted fields in camelCase.
@@ -67,11 +69,10 @@ class DocumentService:
                 processor_result["text"] = ocr_text
                 processor_result["processingMethod"] = "ocr"
 
-            extractor = ExtractorFactory.make(document_type, extractor_strategy=strategy)
+            extractor = ExtractorFactory.make(document_type, extractor_strategy=strategy, ai_provider=provider)
             raw_text = processor_result.get("text") or ""
             diagnosis = processor_result.get("diagnosis")
 
-            # Resolve fields to extract
             if all_fields:
                 fields_to_extract = []
             elif requested_fields:

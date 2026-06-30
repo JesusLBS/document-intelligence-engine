@@ -34,11 +34,20 @@ class Config:
     DEFAULT_EXTRACTOR: str = os.getenv("DEFAULT_EXTRACTOR", "regex")
     DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "es")
 
-    # AI Extractor
+    # AI Provider
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "gemini")
+
+    # Groq
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-    GROQ_API_URL: str = os.getenv("GROQ_API_URL", "")
+    GROQ_API_URL: str = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 
+    # Gemini
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_API_URL: str = os.getenv("GEMINI_API_URL", "https://generativelanguage.googleapis.com/v1beta/models")
+
+    # Document default fields per type
     DOCUMENT_DEFAULT_FIELDS: dict = {
         "ine": ["nombre", "apellido_paterno", "apellido_materno", "curp", "fecha_nacimiento", "fecha_vencimiento", "clave_elector"],
         "csf": ["rfc", "curp", "full_name", "padron_status", "tax_regimes"],

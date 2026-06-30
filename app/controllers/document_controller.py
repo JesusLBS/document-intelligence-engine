@@ -41,17 +41,19 @@ class DocumentController:
         to_page = int(to_page) if to_page else None
         extractor_strategy = request.form.get("extractor", Config.DEFAULT_EXTRACTOR)
         all_fields = request.form.get("all_fields", "false").lower() == "true"
+        provider = request.form.get("provider", Config.AI_PROVIDER)
 
         result = self.document_service.process(
             file=file,
             document_type=document_type,
+            provider=provider,
             requested_fields=requested_fields,
             from_page=from_page,
             to_page=to_page,
             force_ocr=force_ocr,
             debug_mode=debug_mode,
             extractor_strategy=extractor_strategy,
-            all_fields=all_fields,
+            all_fields=all_fields
         )
 
         if not include_raw_text:
