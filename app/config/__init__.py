@@ -49,7 +49,7 @@ class Config:
 
     # Document default fields per type
     DOCUMENT_DEFAULT_FIELDS: dict = {
-        "ine": ["nombre", "apellido_paterno", "apellido_materno", "curp", "fecha_nacimiento", "fecha_vencimiento", "clave_elector"],
+        "ine": ["nombre", "apellido_materno", "apellido_paterno", "curp", "fecha_nacimiento", "fecha_vencimiento", "clave_elector"],
         "csf": ["rfc", "curp", "full_name", "padron_status", "tax_regimes"],
         "comprobante_domicilio": ["nombre", "direccion", "periodo", "fecha_emision", "empresa"],
     }

@@ -8,9 +8,18 @@ from app.helpers.logger import Logger
 class GroqExtractor(BaseAiExtractor):
     """AI extractor using Groq API (text-only, no multimodal support)."""
 
-    def extract(self, text: str, requested_fields: list[str], document_type: str = None, diagnosis: dict = None, all_fields: bool = False) -> dict:
+    def extract(
+        self,
+        text: str,
+        requested_fields: list[str],
+        document_type: str = None,
+        diagnosis: dict = None,
+        all_fields: bool = False,
+        image_paths: list[str] = None,
+        name_hints: dict = None,
+    ) -> dict:
         """
-        Extract fields from text using Groq LLM.
+        Extract fields from text using Groq LLM. Images are ignored — Groq is text-only.
 
         Args:
             text (str): Raw text extracted from document.
@@ -18,15 +27,22 @@ class GroqExtractor(BaseAiExtractor):
             document_type (str, optional): Document type for context.
             diagnosis (dict, optional): Diagnosis metadata for context.
             all_fields (bool): If True, extract all available fields.
+            image_paths (list[str], optional): Ignored — Groq does not support images.
+            name_hints (dict, optional): Pre-decoded CURP name initials hints.
 
         Returns:
             dict: Extracted fields in snake_case.
         """
+        if image_paths:
+            Logger.warning("GroqExtractor does not support images, ignoring image_paths", document_type=document_type)
+
         if not text or not text.strip():
             Logger.warning("GroqExtractor received empty text", document_type=document_type)
             return {}
 
-        prompt = self._build_prompt(text, requested_fields, document_type, diagnosis, all_fields)
+        prompt = self._build_prompt(
+            text, requested_fields, document_type, diagnosis, all_fields, name_hints=name_hints
+        )
 
         Logger.info("Sending request to Groq API", document_type=document_type, model=Config.GROQ_MODEL)
 

@@ -49,6 +49,7 @@ class DocumentService:
         file_path = self._save(file, extension)
         request_id = str(uuid.uuid4())
         strategy = extractor_strategy or Config.DEFAULT_EXTRACTOR
+        image_paths = []
 
         try:
             processor = DocumentProcessorFactory.make(extension)
@@ -59,15 +60,16 @@ class DocumentService:
 
             if needs_ocr:
                 ocr = TesseractOcr()
-                ocr_text = ocr.extract_text(
+                ocr_result = ocr.extract_text(
                     file_path,
                     from_page=from_page,
                     to_page=to_page,
                     debug_mode=debug_mode,
                     request_id=request_id,
                 )
-                processor_result["text"] = ocr_text
+                processor_result["text"] = ocr_result["text"]
                 processor_result["processingMethod"] = "ocr"
+                image_paths = ocr_result["image_paths"]
 
             extractor = ExtractorFactory.make(document_type, extractor_strategy=strategy, ai_provider=provider)
             raw_text = processor_result.get("text") or ""
@@ -87,6 +89,7 @@ class DocumentService:
                     document_type=document_type,
                     diagnosis=diagnosis,
                     all_fields=all_fields,
+                    image_paths=image_paths,
                 )
             else:
                 extracted = extractor.extract(raw_text, fields_to_extract)
@@ -95,6 +98,8 @@ class DocumentService:
             return processor_result
         finally:
             self._cleanup(file_path)
+            if image_paths:
+                TesseractOcr.cleanup_temp_images(request_id)
 
     def _get_extension(self, filename: str) -> str:
         """
