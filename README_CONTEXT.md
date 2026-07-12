@@ -48,10 +48,11 @@ OCR is only one stage within the document processing pipeline.
 
 The project is a Document Intelligence platform.
 
-The architecture must support future integrations such as:
+The architecture supports integrations such as:
 
+* ✅ Gemini (implemented)
+* ✅ Groq (implemented)
 * OpenAI
-* Gemini
 * Claude
 * Azure Document Intelligence
 * AWS Textract
@@ -277,13 +278,25 @@ DocumentProcessorFactory
     ↓
 DocumentProcessorInterface
     ↓
-Selected Processor
+Selected Processor (PdfProcessor)
     ↓
-Extractor
+Diagnosis (OCR required?)
+    ├── NO  → Embedded text extraction
+    └── YES → TesseractOcr
+              ↓
+              OpenCV preprocess → temp images (storage/temp_images)
+              ↓
+              OCR text + image_paths
     ↓
-Validator
+ExtractorFactory
+    ├── CsfExtractor (regex)
+    ├── AiExtractor → Gemini (multimodal: image_paths + text)
+    │              → Groq (text-only)
+    └── PassthroughExtractor (regex fallback)
     ↓
-Response Builder
+Validator (planned)
+    ↓
+Response Builder (camelCase fields)
     ↓
 JSON Response
 ```
@@ -387,33 +400,36 @@ Responsibilities:
 
 # Initial MVP
 
-Only PDF support.
+**Status: Implemented**
 
-Goal:
-
-Determine:
+Only PDF support is currently available. The MVP goals are fully operational:
 
 * Is the file a valid PDF?
 * Does it contain embedded text?
-* Is it scanned?
+* Is it scanned / does it require OCR?
 * How many pages does it have?
+* What fields can be extracted for the given document type?
 
 Flow:
 
 ```text
 PDF
  ↓
-Contains Text?
- ├── YES → Extract Text
- └── NO
+PdfProcessor (PyMuPDF)
+ ↓
+Diagnosis (text density, scan detection)
+ ├── Sufficient text → Extract embedded text
+ └── OCR required (or force_ocr=true)
        ↓
-Convert Pages To Images
+       Convert pages to images (pdf2image, 300 DPI)
        ↓
-OCR
+       OpenCV preprocess (grayscale, contrast, denoise)
        ↓
-Text Extraction
+       Tesseract OCR + temp images for AI
        ↓
-Response
+ExtractorFactory (regex / ai)
+       ↓
+Structured JSON Response
 ```
 
 ---
@@ -452,36 +468,56 @@ Libraries:
 
 # OCR Layer
 
-Initial Option:
+**Status: Implemented**
 
-* pytesseract
+Current implementation: `TesseractOcr` (`app/ocr/tesseract_ocr.py`)
 
-Future Option:
+Pipeline:
+
+1. Convert PDF pages to images via `pdf2image` (300 DPI, poppler)
+2. Preprocess each page with OpenCV: grayscale, contrast enhancement, noise reduction
+3. Run Tesseract via `pytesseract` (Spanish language pack)
+4. Save temp images to `storage/temp_images/{request_id}/` for multimodal AI (Gemini)
+5. Cleanup temp images after processing (unless `debug_mode=true`, which persists to `storage/debug/`)
+
+Future option:
 
 * PaddleOCR
 
 Responsibilities:
 
-* Extract text from images
-* Process scanned documents
+* Extract text from scanned PDF pages
+* Generate page images for AI multimodal extraction
+* Support page range (`from_page`, `to_page`) and debug mode
 
 ---
 
 # Data Extraction
 
-Initial Approach:
+**Status: Partially implemented**
 
-* Regex
-* Pattern Matching
+Current extractors (via `ExtractorFactory`):
 
-Examples:
+| Extractor | Strategy | Document types | Status |
+|-----------|----------|----------------|--------|
+| `CsfExtractor` | regex | `csf` | ✅ Implemented with unit tests |
+| `AiExtractor` | ai | any registered type | ✅ Implemented (Gemini, Groq) |
+| `PassthroughExtractor` | regex fallback | types without dedicated regex extractor | ✅ Implemented (returns empty fields) |
 
-* Names
-* RFC
-* CURP
-* Dates
-* CLABE
-* Professional License Numbers
+`AiExtractor` delegates to provider-specific classes:
+
+* `GeminiExtractor` — multimodal (text + page images from OCR pipeline)
+* `GroqExtractor` — text-only
+
+For INE documents, `AiExtractor` enriches prompts with CURP decoding hints via `app/utils/curp_decoder.py`.
+
+Regex approach (initial):
+
+* Pattern matching for structured fields: RFC, CURP, names, dates, tax regimes
+
+Planned regex extractors:
+
+* INE, comprobante de domicilio, estado de cuenta, licencia profesional
 
 ---
 
@@ -505,112 +541,106 @@ Validation logic must always remain inside the application.
 
 ---
 
-# Future AI Integration
+# AI Integration
 
-Current Architecture Supports:
+**Status: Implemented**
+
+AI extraction is operational via `AiExtractor` and the Strategy pattern for providers.
+
+Current flow:
 
 ```text
 PDF
  ↓
-OCR
+OCR (when required) → text + image_paths
  ↓
-AI Extractor
+AiExtractor (BaseExtractor)
  ↓
-Validation
+Provider (gemini | groq)
+ ↓
+Structured fields (camelCase)
  ↓
 Response
 ```
 
-Possible Providers:
+Implemented providers:
+
+| Provider | Class | Capabilities |
+|----------|-------|--------------|
+| Gemini | `GeminiExtractor` | Multimodal (text + page images) |
+| Groq | `GroqExtractor` | Text-only |
+
+Provider selection: configurable per request (`provider` form field) or via `AI_PROVIDER` env var.
+
+Abstraction:
+
+```text
+BaseExtractor
+    ├── CsfExtractor (regex)
+    ├── AiExtractor
+    │     └── BaseAiExtractor
+    │           ├── GeminiExtractor
+    │           └── GroqExtractor
+    └── PassthroughExtractor
+```
+
+Planned providers:
 
 * OpenAI
-* Gemini
 * Claude
 * Azure Document Intelligence
 * AWS Textract
 
-Future Abstraction:
-
-```text
-ExtractorInterface
-```
-
-Implementations:
-
-* RegexExtractor
-* OpenAIExtractor
-* GeminiExtractor
-* ClaudeExtractor
-
-Provider selection should be configurable.
-
 ---
 
-# Initial Folder Structure
+# Folder Structure
+
+Current repository layout (as implemented):
 
 ```text
-
 document-intelligence-engine/
-
 ├── app/
-│
 │   ├── config/
-│
 │   ├── contracts/
-│
 │   ├── controllers/
-│
 │   ├── exceptions/
-│
-│   ├── services/
-│
-│   ├── factories/
-│
-│   ├── processors/
-│   │
-│   │   ├── interfaces/
-│   │   ├── base/
-│   │   ├── pdf/
-│   │   ├── image/
-│   │   ├── excel/
-│   │   ├── csv/
-│   │   └── word/
-│
 │   ├── extractors/
-│
-│   ├── validators/
-│
+│   │   └── ai/              # gemini_extractor, groq_extractor, base_ai_extractor
+│   ├── factories/
+│   ├── helpers/
 │   ├── ocr/
-│
+│   ├── processors/
+│   │   ├── base/
+│   │   └── pdf/
+│   ├── routes/
 │   ├── schemas/
-│
-│   └── utils/
-│
-├── docs/
-│   ├── images/
-│   └── diagrams/
-│
-├── samples/
-│   ├── pdf/
-│   ├── images/
-│   ├── excel/
-│   ├── csv/
-│   └── word/
-│
-├── tests/
-│
-├── uploads/
-│
+│   ├── services/
+│   ├── utils/               # curp_decoder, case_converter
+│   └── validators/
 ├── docker/
-│
-├── .env.example
-├── .gitignore
+├── nginx/
+├── storage/
+│   ├── debug/
+│   ├── logs/
+│   └── temp_images/
+├── tests/
+│   └── extractors/
+├── docs/
+│   └── README.en.md
+├── docker-compose.yml
+├── index.py
 ├── requirements.txt
 ├── README.md
 ├── README_CONTEXT.md
-├── index.py
-
+├── NOTICE.txt
+└── .env.example
 ```
+
+Planned additions (not yet present):
+
+* `processors/image/`, `processors/excel/`, `processors/csv/`, `processors/word/`
+* `docs/screenshots/`, `docs/diagrams/`
+* Dedicated regex extractors for INE, comprobante de domicilio, etc.
 
 ---
 
@@ -642,40 +672,69 @@ Utilities
 
 # Project Roadmap
 
-## Phase 1
+## Phase 1 — Core Platform ✅ Completed
 
 * Docker Environment
-* Flask API
-* PDF Processor
-* OCR Integration
-* Strategy Pattern
-* Factory Pattern
+* Flask API (`/health`, `/documents/process`)
+* PDF Processor with OCR diagnosis
+* OCR Integration (Tesseract + OpenCV)
+* Strategy Pattern + Factory Pattern
 * Standard Response Structure
+* Marshmallow validation + centralized exceptions
 
-## Phase 2
+## Phase 2 — Data Extraction 🔄 Partial
+
+* ✅ CSF regex extractor with unit tests
+* ✅ AI extraction (Gemini multimodal, Groq text-only)
+* ✅ CURP decoder hints for INE
+* 🔄 Regex extractors for INE, comprobante de domicilio, etc.
+* 🔄 Default fields for all registered document types
+
+## Phase 3 — File Processors 📋 Planned
 
 * Image Processor
-
-## Phase 3
-
 * Excel Processor
 * CSV Processor
-
-## Phase 4
-
 * Word Processor
 
-## Phase 5
+## Phase 4 — Business Validation 📋 Planned
 
 * Business Validation Engine
+* Document age rules, field cross-validation, required fields
 
-## Phase 6
+## Phase 5 — AI Providers 🔄 Partial
 
-* AI Integrations
+* ✅ Gemini (multimodal)
+* ✅ Groq (text-only)
+* 📋 OpenAI, Claude, Azure Document Intelligence, AWS Textract
 
-## Phase 7
+## Phase 6 — Quality & Observability 📋 Planned
 
+* API integration tests
+* AI extraction tests (mocked providers)
+* Postman collection + screenshots
 * Advanced Document Intelligence Features
+
+---
+
+# Current Implementation Status
+
+Synchronized with [README.md](./README.md).
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Flask API | ✅ Stable | `GET /api/v1/health`, `POST /api/v1/documents/process` |
+| PDF processing (PyMuPDF) | ✅ Stable | Metadata, page range, OCR diagnosis |
+| OCR pipeline | ✅ Stable | Tesseract + OpenCV preprocess, temp images, cleanup |
+| CSF regex extractor | ✅ Stable | Unit tests in `tests/extractors/test_csf_extractor.py` |
+| INE AI extraction | ✅ Stable | Gemini multimodal + CURP hints |
+| Multi-provider AI | ✅ Stable | Gemini, Groq — selectable per request |
+| Docker + nginx | ✅ Stable | `docker-compose up` |
+| `comprobante_domicilio`, `estado_cuenta`, `licencia_profesional` | 🔄 Partial | Registered; AI-only or empty regex via PassthroughExtractor |
+| Business rule validation | 🔄 Pending | Layer defined conceptually, not implemented |
+| Integration / AI tests | 🔄 Pending | CSF unit tests only |
+| Image, Excel, CSV, Word processors | 📋 Planned | Architecture supports extension |
+| Additional AI providers | 📋 Planned | Claude, Azure, AWS |
 
 ---
 
@@ -694,8 +753,5 @@ The project should demonstrate:
 * OCR Integration
 * Document Processing
 * Extensible Architecture
-* Future AI Integration Capabilities
-
-```
-
-```
+* AI Integration (Gemini, Groq)
+* Multimodal Document Extraction
