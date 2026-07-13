@@ -312,7 +312,19 @@ curl -X POST http://localhost:5000/api/v1/documents/process \
 }
 ```
 
-> Screenshots de Postman: pendientes en `docs/screenshots/`.
+> Screenshots de Postman:  `docs/screenshots/`.
+
+### Health check
+<img src="./docs/screenshots/health.png" width="700"/>
+
+### CSF — extracción regex
+<img src="./docs/screenshots/process-csf-regex.png" width="700"/>
+
+### INE — extracción con IA
+<img src="./docs/screenshots/process-ine-ai.png" width="700"/>
+
+### Validación de entrada (422)
+<img src="./docs/screenshots/process-validation-422.png" width="700"/>
 
 ---
 
