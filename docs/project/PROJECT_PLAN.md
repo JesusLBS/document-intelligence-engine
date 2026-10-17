@@ -1,4 +1,12 @@
-# Document Intelligence Engine
+# Document Intelligence Engine — Project Plan
+
+Design rationale, architecture and roadmap. This file explains **why** things are built the way they are; it does not track progress.
+
+- Current status and next target: [`STATUS.md`](./STATUS.md) — the only place status is asserted.
+- Working rules for any AI assistant (and the request lifecycle): [`AGENTS.md`](../../AGENTS.md).
+- Setup, API usage and repo layout: [`README.md`](../../README.md).
+
+---
 
 ## Project Overview
 
@@ -50,8 +58,8 @@ The project is a Document Intelligence platform.
 
 The architecture supports integrations such as:
 
-* ✅ Gemini (implemented)
-* ✅ Groq (implemented)
+* Gemini
+* Groq
 * OpenAI
 * Claude
 * Azure Document Intelligence
@@ -284,7 +292,7 @@ Diagnosis (OCR required?)
     ├── NO  → Embedded text extraction
     └── YES → TesseractOcr
               ↓
-              OpenCV preprocess → temp images (storage/temp_images)
+              Grayscale preprocess (Pillow) → temp images (storage/temp_images)
               ↓
               OCR text + image_paths
     ↓
@@ -400,9 +408,7 @@ Responsibilities:
 
 # Initial MVP
 
-**Status: Implemented**
-
-Only PDF support is currently available. The MVP goals are fully operational:
+PDF-only. The MVP answers:
 
 * Is the file a valid PDF?
 * Does it contain embedded text?
@@ -423,7 +429,7 @@ Diagnosis (text density, scan detection)
        ↓
        Convert pages to images (pdf2image, 300 DPI)
        ↓
-       OpenCV preprocess (grayscale, contrast, denoise)
+       Grayscale conversion (Pillow)
        ↓
        Tesseract OCR + temp images for AI
        ↓
@@ -452,33 +458,25 @@ Responsibilities:
 
 # Image Processing
 
-Before OCR:
+Current preprocessing before OCR: **grayscale conversion only** (Pillow, `TesseractOcr._preprocess`).
 
-* Convert to grayscale
-* Improve contrast
-* Reduce noise
-* Correct rotation
+Decision history: a full OpenCV pipeline (denoise, CLAHE contrast, Otsu binarization, rotation correction) was implemented in commit `a34af13` and replaced by plain grayscale in `3182f91` (the commit that introduced `AiExtractor`); multimodal Gemini extraction, which receives the original page image, came later in `26eb3f0`. The reason for dropping the pipeline was not recorded at the time; `opencv-python`/`numpy` were later removed from `requirements.txt` because nothing imported them.
 
-Libraries:
-
-* Pillow
-* OpenCV
+Re-introduce OpenCV only with a before/after measurement on real samples (OCR accuracy for the regex path), not by default.
 
 ---
 
 # OCR Layer
-
-**Status: Implemented**
 
 Current implementation: `TesseractOcr` (`app/ocr/tesseract_ocr.py`)
 
 Pipeline:
 
 1. Convert PDF pages to images via `pdf2image` (300 DPI, poppler)
-2. Preprocess each page with OpenCV: grayscale, contrast enhancement, noise reduction
-3. Run Tesseract via `pytesseract` (Spanish language pack)
-4. Save temp images to `storage/temp_images/{request_id}/` for multimodal AI (Gemini)
-5. Cleanup temp images after processing (unless `debug_mode=true`, which persists to `storage/debug/`)
+2. Convert each page to grayscale (Pillow)
+3. Run Tesseract via `pytesseract` (Spanish language pack, hardcoded `spa`)
+4. Save the original (non-grayscale) page images to `storage/temp_images/{request_id}/` for multimodal AI (Gemini)
+5. Always delete temp images after processing. With `debug_mode=true`, the grayscale images are **additionally** saved to `storage/debug/{request_id}/`, and previous debug folders are wiped first
 
 Future option:
 
@@ -494,15 +492,13 @@ Responsibilities:
 
 # Data Extraction
 
-**Status: Partially implemented**
-
 Current extractors (via `ExtractorFactory`):
 
-| Extractor | Strategy | Document types | Status |
-|-----------|----------|----------------|--------|
-| `CsfExtractor` | regex | `csf` | ✅ Implemented with unit tests |
-| `AiExtractor` | ai | any registered type | ✅ Implemented (Gemini, Groq) |
-| `PassthroughExtractor` | regex fallback | types without dedicated regex extractor | ✅ Implemented (returns empty fields) |
+| Extractor | Strategy | Document types | Notes |
+|-----------|----------|----------------|-------|
+| `CsfExtractor` | regex | `csf` | Pure regex over embedded/OCR text |
+| `AiExtractor` | ai | any registered type | Delegates to Gemini or Groq |
+| `PassthroughExtractor` | regex fallback | types without dedicated regex extractor | Returns empty fields, never raises |
 
 `AiExtractor` delegates to provider-specific classes:
 
@@ -543,9 +539,7 @@ Validation logic must always remain inside the application.
 
 # AI Integration
 
-**Status: Implemented**
-
-AI extraction is operational via `AiExtractor` and the Strategy pattern for providers.
+AI extraction goes through `AiExtractor` and the Strategy pattern for providers.
 
 Current flow:
 
@@ -595,146 +589,99 @@ Planned providers:
 
 # Folder Structure
 
-Current repository layout (as implemented):
-
-```text
-document-intelligence-engine/
-├── app/
-│   ├── config/
-│   ├── contracts/
-│   ├── controllers/
-│   ├── exceptions/
-│   ├── extractors/
-│   │   └── ai/              # gemini_extractor, groq_extractor, base_ai_extractor
-│   ├── factories/
-│   ├── helpers/
-│   ├── ocr/
-│   ├── processors/
-│   │   ├── base/
-│   │   └── pdf/
-│   ├── routes/
-│   ├── schemas/
-│   ├── services/
-│   ├── utils/               # curp_decoder, case_converter
-│   └── validators/
-├── docker/
-├── nginx/
-├── storage/
-│   ├── debug/
-│   ├── logs/
-│   └── temp_images/
-├── tests/
-│   └── extractors/
-├── docs/
-│   └── README.en.md
-├── docker-compose.yml
-├── index.py
-├── requirements.txt
-├── README.md
-├── README_CONTEXT.md
-├── NOTICE.txt
-└── .env.example
-```
+The current repository tree lives in [`README.md`](../../README.md) → "Estructura del repo" (single copy, to avoid drift).
 
 Planned additions (not yet present):
 
-* `processors/image/`, `processors/excel/`, `processors/csv/`, `processors/word/`
-* `docs/screenshots/`, `docs/diagrams/`
+* Real processors in `app/processors/{image,excel,csv,word}/` (today they are empty scaffold folders with `__init__.py` only)
+* `app/validators/` business-rule validators (today the folder only holds request validation)
 * Dedicated regex extractors for INE, comprobante de domicilio, etc.
+* `docs/diagrams/`
 
 ---
 
-# Initial Dependencies
+# Dependencies
+
+Exact pinned versions: `requirements.txt`.
 
 API
 
 * Flask
+* marshmallow (request validation)
 
 PDF
 
 * PyMuPDF
-* pdf2image
+* pdf2image (requires poppler on the host)
 
 Images
 
 * Pillow
-* OpenCV
 
 OCR
 
-* pytesseract
+* pytesseract (requires Tesseract + `spa` language pack on the host)
+
+AI providers
+
+* requests (Gemini and Groq are called over plain HTTP, no vendor SDK)
 
 Utilities
 
 * python-dotenv
 
+Tests
+
+* pytest
+
 ---
 
 # Project Roadmap
 
-## Phase 1 — Core Platform ✅ Completed
+Scope of each phase. Which phase is done, in progress or next: [`STATUS.md`](./STATUS.md) — never mark progress here.
+
+## Phase 1 — Core Platform
 
 * Docker Environment
 * Flask API (`/health`, `/documents/process`)
 * PDF Processor with OCR diagnosis
-* OCR Integration (Tesseract + OpenCV)
+* OCR Integration (Tesseract)
 * Strategy Pattern + Factory Pattern
 * Standard Response Structure
 * Marshmallow validation + centralized exceptions
 
-## Phase 2 — Data Extraction 🔄 Partial
+## Phase 2 — Data Extraction
 
-* ✅ CSF regex extractor with unit tests
-* ✅ AI extraction (Gemini multimodal, Groq text-only)
-* ✅ CURP decoder hints for INE
-* 🔄 Regex extractors for INE, comprobante de domicilio, etc.
-* 🔄 Default fields for all registered document types
+* CSF regex extractor with unit tests
+* AI extraction (Gemini multimodal, Groq text-only)
+* CURP decoder hints for INE
+* Regex extractors for INE, comprobante de domicilio, etc.
+* Default fields for all registered document types
 
-## Phase 3 — File Processors 📋 Planned
+## Phase 3 — File Processors
 
 * Image Processor
 * Excel Processor
 * CSV Processor
 * Word Processor
 
-## Phase 4 — Business Validation 📋 Planned
+## Phase 4 — Business Validation
 
 * Business Validation Engine
 * Document age rules, field cross-validation, required fields
 
-## Phase 5 — AI Providers 🔄 Partial
+## Phase 5 — AI Providers
 
-* ✅ Gemini (multimodal)
-* ✅ Groq (text-only)
-* 📋 OpenAI, Claude, Azure Document Intelligence, AWS Textract
+* Gemini (multimodal)
+* Groq (text-only)
+* OpenAI, Claude, Azure Document Intelligence, AWS Textract
 
-## Phase 6 — Quality & Observability 📋 Planned
+## Phase 6 — Quality & Observability
 
-* API integration tests
-* AI extraction tests (mocked providers)
+* CI (GitHub Actions running pytest on every PR)
+* Service, factory and API tests (mocked OCR and AI providers)
 * Postman collection + screenshots
 * Advanced Document Intelligence Features
-
----
-
-# Current Implementation Status
-
-Synchronized with [README.md](./README.md).
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Flask API | ✅ Stable | `GET /api/v1/health`, `POST /api/v1/documents/process` |
-| PDF processing (PyMuPDF) | ✅ Stable | Metadata, page range, OCR diagnosis |
-| OCR pipeline | ✅ Stable | Tesseract + OpenCV preprocess, temp images, cleanup |
-| CSF regex extractor | ✅ Stable | Unit tests in `tests/extractors/test_csf_extractor.py` |
-| INE AI extraction | ✅ Stable | Gemini multimodal + CURP hints |
-| Multi-provider AI | ✅ Stable | Gemini, Groq — selectable per request |
-| Docker + nginx | ✅ Stable | `docker-compose up` |
-| `comprobante_domicilio`, `estado_cuenta`, `licencia_profesional` | 🔄 Partial | Registered; AI-only or empty regex via PassthroughExtractor |
-| Business rule validation | 🔄 Pending | Layer defined conceptually, not implemented |
-| Integration / AI tests | 🔄 Pending | CSF unit tests only |
-| Image, Excel, CSV, Word processors | 📋 Planned | Architecture supports extension |
-| Additional AI providers | 📋 Planned | Claude, Azure, AWS |
 
 ---
 
