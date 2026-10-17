@@ -12,6 +12,4 @@ pytest==9.1.0
 pytesseract==0.3.13
 Pillow==11.2.1
 pdf2image==1.17.0
-opencv-python==4.11.0.86
-numpy==2.2.6
 requests==2.32.3

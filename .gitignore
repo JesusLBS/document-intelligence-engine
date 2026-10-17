@@ -91,3 +91,5 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+# Claude Code personal overrides
+.claude/settings.local.json
