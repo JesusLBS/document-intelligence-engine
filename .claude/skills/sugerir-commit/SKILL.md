@@ -22,13 +22,21 @@ git diff                   # contenido, si el --stat no basta
 - Commits locales ya hechos y sin push no se mezclan: el mensaje describe solo lo pendiente.
 - Señala archivos que **no** deban ir: `.env`, credenciales, `uploads/`, `storage/`, PDFs reales con datos personales, `.DS_Store`.
 
-## 2. ¿Cuántos commits?
+## 2. Mapa de temas (obligatorio antes de escribir el mensaje)
+
+Agrupa **cada** archivo pendiente en un tema y muéstralo como tabla `tema → archivos → qué cambió`. Luego:
+
+- El **header** nombra el tema global (no el último cambio ni el archivo más visible).
+- La **description** menciona cada tema del mapa. Si un tema no cabe, el mensaje no refleja el trabajo.
+- Si en 100 caracteres no caben todos los temas, esa es la señal para dividir en 2 commits (paso 3), no para omitir temas.
+
+## 3. ¿Cuántos commits?
 
 - **Por defecto, uno.** Si hay dos temas y uno es pequeño, un solo commit que mencione ambos está bien.
 - Divide solo cuando valga la pena (por ejemplo, poder revertir un cambio de runtime/Docker sin tocar docs). **Máximo 2–3 por sesión.** No dividas por tipo de archivo porque sí.
 - Si sugieres más de uno, para **cada** commit da: la lista de archivos, su `git add` exacto y su `git commit`. Si ya hay cambios en stage, indica el **orden** en que deben hacerse para que nada se cuele en el commit equivocado. Di en una línea por qué conviene dividir, y ofrece la alternativa de un solo commit.
 
-## 3. Formato
+## 4. Formato
 
 ```
 <type>: :<gitmoji>: <subject>
@@ -56,7 +64,7 @@ git diff                   # contenido, si el --stat no basta
 | `perf` | `:zap:` | Rendimiento |
 | `style` | `:art:` | Formato sin cambios de lógica |
 
-## 4. Cuenta los caracteres
+## 5. Cuenta los caracteres
 
 ```bash
 printf '%s' 'feat: :sparkles: add business validation layer for csf' | wc -m
@@ -64,11 +72,11 @@ printf '%s' 'feat: :sparkles: add business validation layer for csf' | wc -m
 
 Si algo pasa de 100, acórtalo; no lo partas en varias líneas.
 
-## 5. Entrega
+## 6. Entrega
 
 Por cada commit:
 
-1. Tabla o lista de archivos que incluye.
+1. El mapa de temas del paso 2 (tema → archivos → qué cambió).
 2. El bloque listo para copiar en zsh:
 
 ```zsh
