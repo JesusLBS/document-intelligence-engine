@@ -113,6 +113,7 @@ document-intelligence-engine/
 │   └── README.en.md         # Este README en inglés
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
+├── scripts/                 # up, verify, smoke, doctor (los llama el Makefile)
 ├── samples/                 # Documentos de muestra con datos ficticios
 ├── storage/                 # debug/, logs/, temp_images/ (generados en runtime, ignorados por git)
 ├── uploads/                 # Uploads temporales (ignorados por git)
@@ -122,6 +123,7 @@ document-intelligence-engine/
 ├── AGENTS.md                # Contexto y reglas para cualquier asistente de IA
 ├── CLAUDE.md, GEMINI.md     # Solo importan AGENTS.md
 ├── docker-compose.yml
+├── Makefile                 # Atajos: make up, make test, make verify…
 ├── index.py                 # Entry point Flask
 ├── requirements.txt
 ├── NOTICE.txt
@@ -130,39 +132,77 @@ document-intelligence-engine/
 
 ---
 
-## Instrucciones de inicio
+## Desarrollo local
 
-### Requisitos previos
+**Docker es el entorno principal** de desarrollo: trae Python 3.12, Tesseract con español y poppler, y es lo que usan los ejemplos de este README. Correr con Python local es **opcional** (ver al final de esta sección).
 
-- Python 3.12
-- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) con paquete de idioma `spa`
-- [poppler-utils](https://poppler.freedesktop.org/) (requerido por pdf2image)
-- Claves de API (solo si usas `extractor=ai`): `GEMINI_API_KEY` y/o `GROQ_API_KEY`
+### Requisitos
 
-### Local sin Docker
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) corriendo
+- `make` (viene con macOS/Linux)
+- Entrada en `/etc/hosts`: `127.0.0.1 document-intelligence.test` (dominio local que atiende nginx)
+- Claves de API solo si usas `extractor=ai`: `GEMINI_API_KEY` y/o `GROQ_API_KEY`
+
+`make doctor` revisa todo esto (solo lee, no instala nada).
+
+### Primer arranque
 
 ```bash
 git clone <repo-url>
 cd document-intelligence-engine
-
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-
-pip install -r requirements.txt
-
-cp .env.example .env
-# Edita .env con tus claves de IA si aplica
-
-python index.py
-# API disponible en http://localhost:5000
+cp .env.example .env                    # edita las claves de IA si las vas a usar
+echo "127.0.0.1 document-intelligence.test" | sudo tee -a /etc/hosts   # dominio local (una sola vez por máquina)
+git config core.hooksPath .githooks     # activa el pre-push que protege main/develop
+make doctor                             # revisa requisitos
+make build                              # construye la imagen y levanta en segundo plano
+make smoke                              # health + OCR real sobre samples/pdf/ine_sample.pdf
 ```
 
-### Docker Compose
+API en **http://document-intelligence.test** (nginx en el puerto 80 → Flask en app:5000).
+
+### Comandos del día a día
+
+| Comando | Qué hace |
+|---|---|
+| `make up` | Levanta en segundo plano y espera a que la API responda (healthcheck). No ocupa la terminal |
+| `make build` | Igual, pero reconstruye la imagen. Solo hace falta si cambian `requirements.txt` o el `Dockerfile` |
+| `make down` | Apaga y elimina los contenedores |
+| `make restart` | Reinicia solo la API (por ejemplo, tras cambiar `.env`) |
+| `make logs` | Sigue los logs de Flask. Ctrl+C sale de los logs, **no apaga nada** |
+| `make ps` | Estado de los contenedores |
+| `make shell` | Shell dentro del contenedor de la API |
+| `make test` | pytest dentro del contenedor (`make test ARGS="-k csf"` para filtrar) |
+| `make verify` | Lo mismo que corre el CI; úsalo antes de hacer push |
+| `make smoke` | Prueba de punta a punta a través de nginx |
+| `make doctor` | Requisitos de la máquina, `.env`, `/etc/hosts`, puerto 80 y hooks |
+
+`make` sin argumentos lista los comandos. La lógica vive en `scripts/`; el `Makefile` solo da los atajos.
+
+- El código está montado como volumen y Flask corre en modo debug: los cambios en `app/` se recargan solos, sin reconstruir.
+- Con `restart: unless-stopped`, los contenedores vuelven a levantar cuando reinicias Docker Desktop, salvo que los hayas apagado con `make down`.
+
+### Problemas comunes
+
+| Síntoma | Causa y solución |
+|---|---|
+| La terminal se queda mostrando logs | Se corrió `docker compose up` sin `-d`. Usa `make up`. En primer plano, Ctrl+C apaga los contenedores y Ctrl+Z solo suspende la terminal (al cerrarla se detienen) |
+| `port is already allocated` | Otro proyecto quedó arriba en el puerto 80. Apágalo (`make down` en ese proyecto). `make doctor` te dice quién lo ocupa |
+| `document-intelligence.test` no responde | Falta la entrada en `/etc/hosts` (`make doctor` lo revisa) o los contenedores están abajo (`make ps`) |
+| Cada petición tarda ~5 s | `/etc/resolver/test` manda los `.test` al DNS de Laravel Herd y Herd está apagado: macOS espera 5 s antes de usar `/etc/hosts`. Arranca Herd o revisa ese archivo. `make doctor` lo detecta (línea `dns`) |
+| `env file .env not found` | Falta `cp .env.example .env` |
+| Cambié `requirements.txt` y no se refleja | `make build` |
+| `extractor=ai` responde 500 | Revisa las claves de IA en `.env` y luego `make restart` |
+
+### Opcional: Python local (sin Docker)
+
+Solo si quieres correr la API o los tests fuera de Docker. Requiere Python 3.12 (el de macOS es 3.9 y no sirve), Tesseract con español y poppler:
 
 ```bash
-cp .env.example .env
-docker compose up --build
-# API disponible en http://localhost (nginx → app:5000)
+brew install python@3.12 tesseract tesseract-lang poppler
+python3.12 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python index.py      # http://localhost:5000 (sin nginx)
+pytest tests/ -v
 ```
 
 ---
@@ -231,7 +271,7 @@ Procesa un documento PDF y extrae campos según tipo y estrategia.
 #### Ejemplo CSF (regex)
 
 ```bash
-curl -X POST http://localhost:5000/api/v1/documents/process \
+curl -X POST http://document-intelligence.test/api/v1/documents/process \
   -F "file=@csf.pdf" \
   -F "document_type=csf" \
   -F "extractor=regex" \
@@ -271,7 +311,7 @@ curl -X POST http://localhost:5000/api/v1/documents/process \
 #### Ejemplo INE (ai + gemini)
 
 ```bash
-curl -X POST http://localhost:5000/api/v1/documents/process \
+curl -X POST http://document-intelligence.test/api/v1/documents/process \
   -F "file=@ine.pdf" \
   -F "document_type=ine" \
   -F "extractor=ai" \
@@ -321,14 +361,12 @@ curl -X POST http://localhost:5000/api/v1/documents/process \
 ## Testing
 
 ```bash
-# Activar entorno virtual
-source venv/bin/activate
-
-# Ejecutar tests
-pytest tests/ -v
+make test        # pytest dentro del contenedor
+make verify      # lo mismo que el CI, antes de hacer push
+make smoke       # prueba de punta a punta (health + OCR) contra la API levantada
 ```
 
-Los mismos tests corren en GitHub Actions en cada PR y push a `main`/`develop` (`.github/workflows/tests.yml`).
+`make test` y `make verify` corren los mismos tests que GitHub Actions corre en cada PR y push a `main`/`develop` (`.github/workflows/tests.yml`).
 
 ---
 

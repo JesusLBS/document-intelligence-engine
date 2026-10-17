@@ -6,7 +6,7 @@ Last updated: 2026-10-17
 
 ## Current phase
 
-Repo housekeeping (branch `chore/ai-context-and-ci`): single AI context (`AGENTS.md`), docs aligned with the code, status centralized here, protected-branch convention and CI with pytest.
+Repo housekeeping (branch `chore/ai-context-and-ci`): single AI context (`AGENTS.md`), docs aligned with the code, status centralized here, protected-branch convention, CI with pytest, and a polished local dev environment — Docker as the main environment, `Makefile` + `scripts/` (`make up/down/test/verify/smoke/doctor`), app healthcheck, `/etc/hosts` + port-80 checks for the `document-intelligence.test` local domain, `.env` excluded from the Docker image.
 
 **Next target:** decide between (a) raising test coverage (services, factories, API with mocked OCR/AI) while fixing the open bugs below, or (b) starting Phase 4 — Business Validation. Recommendation: (a) first, so Phase 4 is built on top of a test safety net.
 
@@ -44,6 +44,7 @@ Repo housekeeping (branch `chore/ai-context-and-ci`): single AI context (`AGENTS
 
 - Enable branch protection on `main` and `develop` in GitHub (manual, developer's own action; requires a public repo or a paid plan for private repos).
 - Lint/format (ruff) — deferred to avoid a large unrelated diff.
+- The Docker image runs Flask's development server (`python index.py`, debug on). Fine for local use; a production-like setup would need a WSGI server (e.g. gunicorn) and debug off.
 - `language` request field is accepted but unused (Tesseract language is hardcoded to `spa`).
 
 ## How to keep this file honest

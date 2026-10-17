@@ -27,10 +27,10 @@ Contexto base para **cualquier** asistente de IA (Claude Code, Codex/ChatGPT, Ge
 ## ⚠️ Reglas (obligatorias para cualquier IA)
 
 1. **Una fase o tarea a la vez.** Implementa solo lo pedido; al terminar, reporta y espera la siguiente instrucción.
-2. **No ejecutes comandos de setup ni instalación** (`pip install`, `brew install`, `docker compose build`, crear venvs…). Da el comando exacto y qué hace; el desarrollador lo corre.
+2. **No ejecutes comandos de setup ni instalación** (`pip install`, `brew install`, `make build` / `docker compose build`, crear venvs…). Da el comando exacto y qué hace; el desarrollador lo corre. Sí puedes correr los que operan el entorno ya construido: `make up`, `down`, `restart`, `ps`, `logs`, `test`, `verify`, `smoke`, `doctor`.
 3. **Nunca ejecutes `git add`, `git commit`, `git push` ni abras PRs** salvo que se pida explícitamente en ese turno. Al terminar un cambio, **sugiere** el commit (procedimiento `sugerir-commit`). En Claude Code hay además un hook que lo bloquea; en las demás IAs la regla depende de ti.
 4. **Nunca trabajes en `main` ni `develop`.** Si la rama actual es una de esas y la tarea modifica archivos, crea (o sugiere) una rama desde `develop` antes de escribir.
-5. **Tests antes de dar por terminado:** `pytest tests/ -v` en verde. Si agregas comportamiento, agrega su test.
+5. **Tests antes de dar por terminado:** `make verify` en verde (o `pytest tests/ -v` en el venv opcional). Si agregas comportamiento, agrega su test.
 6. **Al cambiar estado del proyecto** (se termina una fase, se corrige o encuentra un bug, cambia el siguiente objetivo), actualiza `docs/project/STATUS.md`. No repitas el estado en otro archivo. Si cambias `README.md`, actualiza `docs/README.en.md` en el mismo commit (es su traducción).
 7. **Sin secretos ni datos personales** en código, docs, tests o fixtures. No leas ni cites `.env` (solo `.env.example`). Los documentos de muestra y textos de test usan datos ficticios (RFC/CURP genéricos tipo `XAXX010101…`).
 8. Cambios mínimos y localizados: no reformatees ni refactorices archivos ajenos a la tarea.
@@ -40,22 +40,22 @@ Contexto base para **cualquier** asistente de IA (Claude Code, Codex/ChatGPT, Ge
 
 Python 3.12, fijado en `.python-version` (lo usan el CI y pyenv/uv si los tienes; el Dockerfile repite `3.12` a mano). El código usa sintaxis `X | None`, requiere ≥ 3.10: el Python 3.9 del sistema macOS **no** sirve · Flask 3 · marshmallow · PyMuPDF · pdf2image · pytesseract · Pillow · requests · pytest · Docker + nginx. Versiones exactas: `requirements.txt`.
 
+**Docker es el entorno principal** (trae Python 3.12, Tesseract `spa` y poppler; nginx en el puerto 80 atiende `http://document-intelligence.test`, dominio local declarado en `/etc/hosts` y en el `server_name` de `nginx/default.conf`. Nunca cambies ese dominio ni el puerto sin pedirlo: el desarrollador trabaja con dominios `.test`, no con `localhost`). El Python local es opcional y en la Mac del desarrollador hoy no tiene los requisitos: no asumas que existe. Los comandos son atajos del `Makefile`; la lógica vive en `scripts/`.
+
 ```bash
-# Local (requiere Tesseract con el idioma `spa` y poppler instalados en el host)
-python3.12 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python index.py                     # http://localhost:5000
-
-# Docker (incluye Tesseract/poppler y nginx como reverse proxy)
-cp .env.example .env
-docker compose up --build           # http://localhost (nginx -> app:5000)
-
-# Tests (los actuales no necesitan Tesseract ni API keys)
-pytest tests/ -v
-pytest tests/extractors/test_csf_extractor.py -v                                       # un archivo
-pytest tests/extractors/test_csf_extractor.py::TestCsfExtractor::test_extracts_rfc -v  # un test
+make doctor        # requisitos de la máquina, .env, /etc/hosts, puerto 80 y hooks (solo lee)
+make up            # levanta en segundo plano y espera el healthcheck (no ocupa la terminal)
+make build         # igual, reconstruyendo la imagen: solo si cambian requirements.txt o el Dockerfile
+make down | restart | ps | logs | shell
+make test          # pytest dentro del contenedor; filtrar: make test ARGS="-k csf"
+make verify        # lo mismo que el CI, antes de hacer push
+make smoke         # health + OCR real sobre samples/pdf/ine_sample.pdf a través de nginx (sin API keys)
 ```
+
+- Nunca sugieras `docker compose up` sin `-d`: bloquea la terminal y Ctrl+C apaga los contenedores. Usa `make up`.
+- Código montado como volumen + Flask en modo debug: los cambios en `app/` se recargan solos.
+- Un test o archivo puntual: `make test ARGS="tests/extractors/test_csf_extractor.py::TestCsfExtractor::test_extracts_rfc"`.
+- Python local opcional (venv, `brew install python@3.12 tesseract tesseract-lang poppler`): `README.md` → Desarrollo local.
 
 No hay linter/formatter configurado. CI: `.github/workflows/tests.yml` corre pytest en cada PR y push a `main`/`develop`.
 
@@ -104,7 +104,8 @@ Campos por defecto por `document_type` (cuando no llegan `fields` ni `all_fields
 | Diagnóstico de PDF / OCR | `app/processors/pdf/pdf_processor.py`, `app/ocr/tesseract_ocr.py` |
 | Extractores y proveedores de IA | `app/extractors/`, `app/extractors/ai/` |
 | Configuración | `app/config/__init__.py`, `.env.example` |
-| Infra | `docker/Dockerfile`, `docker-compose.yml`, `nginx/default.conf` |
+| Infra y entorno local | `docker/Dockerfile`, `docker-compose.yml`, `nginx/default.conf`, `Makefile`, `scripts/` |
+| Levantar, comandos, problemas comunes | `README.md` → Desarrollo local |
 | CI | `.github/workflows/tests.yml` |
 
 ## Procedimientos (para cualquier IA)
@@ -114,6 +115,7 @@ Viven en `.claude/skills/<nombre>/SKILL.md`. Claude Code los usa como skills; **
 | Cuando… | Procedimiento |
 |---|---|
 | Se termina una funcionalidad, fix o ajuste, o se pide un commit | [`sugerir-commit`](.claude/skills/sugerir-commit/SKILL.md) |
+| Se pide levantar, arrancar, reiniciar o revisar el entorno | [`levantar-proyecto`](.claude/skills/levantar-proyecto/SKILL.md) |
 
 ## Git
 
