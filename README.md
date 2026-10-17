@@ -27,30 +27,16 @@ Casos de uso actuales:
 - **Arquitectura limpia**: Controller → Service → Factory → Processor/Extractor, con contratos e inversión de dependencias.
 - **Patrones de diseño**: Strategy (procesadores, extractores, OCR) y Factory (selección dinámica por tipo de archivo y documento).
 - **Pipeline PDF inteligente**: PyMuPDF diagnostica densidad de texto y decide entre extracción embebida u OCR.
-- **OCR con preprocesamiento**: Tesseract + OpenCV (escala de grises, contraste, reducción de ruido) + imágenes temporales para IA multimodal.
+- **OCR**: Tesseract sobre páginas rasterizadas a 300 DPI y convertidas a escala de grises, más imágenes temporales de cada página para IA multimodal.
 - **IA intercambiable**: `AiExtractor` con providers Gemini (imagen + texto) y Groq (solo texto).
 - **Validación de entrada**: Marshmallow schemas, excepciones centralizadas, logging estructurado.
-- **Contenedorización**: Docker + nginx como reverse proxy.
+- **Contenedorización y CI**: Docker + nginx como reverse proxy; GitHub Actions corre pytest en cada PR.
 
 ---
 
-## Estado actual del proyecto
+## Estado del proyecto
 
-| Área | Estado | Detalle |
-|------|--------|---------|
-| API Flask (`health`, `documents/process`) | ✅ Estable | Endpoints funcionales con respuesta estandarizada |
-| Procesamiento PDF (PyMuPDF) | ✅ Estable | Metadatos, rango de páginas, diagnóstico OCR |
-| Pipeline OCR (Tesseract + OpenCV) | ✅ Estable | Preprocesamiento, temp images, cleanup |
-| CSF (`extractor=regex`) | ✅ Estable | `CsfExtractor` con tests unitarios |
-| INE (`extractor=ai`) | ✅ Estable | Gemini multimodal + hints CURP |
-| Multi-provider AI (Gemini, Groq) | ✅ Estable | Seleccionable por request |
-| Docker + nginx | ✅ Estable | `docker-compose up` |
-| `comprobante_domicilio`, `estado_cuenta`, `licencia_profesional` | 🔄 Parcial | Registrados; sin extractor regex dedicado |
-| Validación de reglas de negocio | 🔄 Pendiente | Capa definida conceptualmente |
-| Tests de integración API / IA | 🔄 Pendiente | Solo tests unitarios de CSF |
-| Procesadores Image, Excel, CSV, Word | 📋 Planificado | Arquitectura preparada, no implementados |
-| Extractores regex INE, comprobante, etc. | 📋 Planificado | — |
-| Providers Claude, Azure, AWS | 📋 Planificado | — |
+Fase actual, qué funciona hoy, bugs conocidos y siguiente paso: **[docs/project/STATUS.md](./docs/project/STATUS.md)** (única fuente de estado).
 
 ---
 
@@ -62,11 +48,11 @@ Casos de uso actuales:
 | Framework | Flask 3 |
 | PDF | PyMuPDF, pdf2image |
 | OCR | Tesseract, pytesseract |
-| Imagen | Pillow, OpenCV |
+| Imagen | Pillow |
 | Validación | Marshmallow |
-| IA | Google Gemini, Groq |
+| IA | Google Gemini, Groq (HTTP con `requests`) |
 | Tests | pytest |
-| Infra | Docker, nginx |
+| Infra | Docker, nginx, GitHub Actions |
 
 ---
 
@@ -83,7 +69,7 @@ DocumentProcessorFactory → PdfProcessor
   ↓
 Diagnosis (OCR required?)
   ├── NO  → Embedded text extraction
-  └── YES → TesseractOcr (+ OpenCV preprocess → temp images)
+  └── YES → TesseractOcr (escala de grises → texto + temp images)
   ↓
 ExtractorFactory
   ├── CsfExtractor (regex)
@@ -93,47 +79,51 @@ ExtractorFactory
 JSON Response (camelCase fields)
 ```
 
-Documentación técnica detallada: [README_CONTEXT.md](./README_CONTEXT.md)
+Diseño, patrones y decisiones de arquitectura: [docs/project/PROJECT_PLAN.md](./docs/project/PROJECT_PLAN.md)
 
 ---
 
-## Estructura principal del repo
+## Estructura del repo
 
 ```text
 document-intelligence-engine/
 ├── app/
-│   ├── config/
-│   ├── contracts/
-│   ├── controllers/
-│   ├── exceptions/
-│   ├── extractors/
-│   │   └── ai/              # gemini_extractor, groq_extractor, base_ai_extractor
-│   ├── factories/
-│   ├── helpers/
-│   ├── ocr/
+│   ├── config/              # Config (única fuente de variables de entorno) + logging
+│   ├── contracts/           # DocumentProcessorInterface
+│   ├── controllers/         # DocumentController (sin lógica de negocio)
+│   ├── exceptions/          # AppException + handler global
+│   ├── extractors/          # BaseExtractor, CsfExtractor, AiExtractor, PassthroughExtractor
+│   │   └── ai/              # BaseAiExtractor, GeminiExtractor, GroqExtractor
+│   ├── factories/           # DocumentProcessorFactory, ExtractorFactory
+│   ├── helpers/             # ResponseHelper, Logger
+│   ├── ocr/                 # BaseOcr, TesseractOcr
 │   ├── processors/
 │   │   ├── base/
-│   │   └── pdf/
-│   ├── routes/
-│   ├── schemas/
-│   ├── services/
+│   │   ├── pdf/             # PdfProcessor (diagnóstico OCR)
+│   │   └── image/ excel/ csv/ word/ interfaces/   # scaffolds vacíos (planificados)
+│   ├── routes/              # Blueprint /api/v1
+│   ├── schemas/             # Schemas marshmallow
+│   ├── services/            # DocumentService (orquestador)
 │   ├── utils/               # curp_decoder, case_converter
-│   └── validators/
-├── docker/
-├── nginx/
-├── storage/
-│   ├── debug/
-│   ├── logs/
-│   └── temp_images/
-├── tests/
-│   └── extractors/
+│   └── validators/          # Validación de request (decorador)
+├── tests/                   # pytest
 ├── docs/
-│   └── README.en.md
+│   ├── project/             # PROJECT_PLAN.md (diseño y roadmap), STATUS.md (estado)
+│   ├── screenshots/         # Capturas de Postman usadas en este README
+│   └── README.en.md         # Este README en inglés
+├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
+├── nginx/                   # Reverse proxy
+├── samples/                 # Documentos de muestra con datos ficticios
+├── storage/                 # debug/, logs/, temp_images/ (generados en runtime, ignorados por git)
+├── uploads/                 # Uploads temporales (ignorados por git)
+├── .github/workflows/       # CI (pytest)
+├── .githooks/               # pre-push que bloquea push directo a main/develop
+├── .claude/                 # Hook y skills de Claude Code
+├── AGENTS.md                # Contexto y reglas para cualquier asistente de IA
+├── CLAUDE.md, GEMINI.md     # Solo importan AGENTS.md
 ├── docker-compose.yml
-├── index.py
+├── index.py                 # Entry point Flask
 ├── requirements.txt
-├── README.md
-├── README_CONTEXT.md
 ├── NOTICE.txt
 └── .env.example
 ```
@@ -271,7 +261,7 @@ curl -X POST http://localhost:5000/api/v1/documents/process \
       "fullName": "JUAN PEREZ LOPEZ"
     },
     "diagnosis": {
-      "reason": "sufficient_text_density",
+      "reason": "embedded_text_found",
       "confidence": "high"
     }
   }
@@ -338,23 +328,15 @@ source venv/bin/activate
 pytest tests/ -v
 ```
 
-Cobertura actual: tests unitarios del extractor CSF (`tests/extractors/test_csf_extractor.py`).
+Los mismos tests corren en GitHub Actions en cada PR y push a `main`/`develop` (`.github/workflows/tests.yml`).
 
 ---
 
 ## Documentación técnica
 
-- [README_CONTEXT.md](./README_CONTEXT.md) — visión del proyecto, SOLID, patrones, decisiones de arquitectura y estado de implementación.
-
----
-
-## Roadmap breve
-
-1. Extractores regex para INE y comprobante de domicilio
-2. Capa de validación de reglas de negocio
-3. Procesadores para Image, Excel, CSV, Word
-4. Tests de integración API e IA
-5. Providers adicionales (Claude, Azure Document Intelligence, AWS Textract)
+- [docs/project/STATUS.md](./docs/project/STATUS.md) — fase actual, qué funciona, bugs conocidos, siguiente paso.
+- [docs/project/PROJECT_PLAN.md](./docs/project/PROJECT_PLAN.md) — visión, SOLID, patrones, decisiones de arquitectura y roadmap por fases.
+- [AGENTS.md](./AGENTS.md) — ciclo de una petición, convenciones y reglas de trabajo (para personas y asistentes de IA).
 
 ---
 
