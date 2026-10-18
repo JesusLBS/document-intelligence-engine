@@ -14,5 +14,5 @@ def health():
 
 @api.route("/documents/process", methods=["POST"])
 @validate_process_document
-def process():
-    return document_controller.process()
+def process(validated: dict):
+    return document_controller.process(validated)

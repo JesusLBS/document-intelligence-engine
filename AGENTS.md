@@ -61,7 +61,7 @@ No hay linter/formatter configurado. CI: `.github/workflows/tests.yml` corre pyt
 
 ## Ciclo de una petición
 
-`app/routes/routes.py` → `@validate_process_document` (schema marshmallow en `app/schemas/process_document.py`, aplicado por `app/validators/base_validator.py`) → `DocumentController.process` (`app/controllers/document_controller.py`: lee los campos del form, sin lógica de negocio) → `DocumentService.process` (`app/services/document_service.py`, el orquestador real):
+`app/routes/routes.py` → `@validate_process_document` (schema marshmallow en `app/schemas/process_document.py`, aplicado por `app/validators/base_validator.py`) → `DocumentController.process(validated)` (`app/controllers/document_controller.py`: recibe el dict ya deserializado por el schema, con tipos convertidos y defaults; sin lógica de negocio) → `DocumentService.process` (`app/services/document_service.py`, el orquestador real):
 
 1. Guarda el upload en `uploads/`; la extensión decide el procesador: `DocumentProcessorFactory.make(extension)` (`app/factories/document_processor_factory.py`; `PROCESSOR_MAP` hoy solo tiene `"pdf" -> PdfProcessor`).
 2. `PdfProcessor` (`app/processors/pdf/pdf_processor.py`) devuelve metadatos + diagnóstico (`diagnosis.reason`: `embedded_text_found`, `low_text_density`, `partial_text_extraction`, `scanned_image_pdf`, `text_rendered_as_paths`, `corrupt_or_proprietary_encoding`, `unknown`). Si `processingMethod == "ocr_required"` o `force_ocr=true`, corre `TesseractOcr.extract_text(...)` (`app/ocr/tesseract_ocr.py`: pdf2image a 300 DPI → escala de grises con Pillow → pytesseract `spa`) y guarda las imágenes originales de cada página en `storage/temp_images/{request_id}/` para la IA multimodal.
@@ -76,14 +76,15 @@ Campos por defecto por `document_type` (cuando no llegan `fields` ni `all_fields
 
 - **Nuevo tipo de archivo**: implementa `DocumentProcessorInterface` (`app/contracts/document_processor_interface.py`), regístralo en `PROCESSOR_MAP` y agrega la extensión a `Config.ALLOWED_EXTENSIONS`. `app/processors/{csv,excel,image,word,interfaces}/` son carpetas vacías (solo `__init__.py`), sin conectar a ninguna factory.
 - **Nuevo extractor regex**: hereda de `BaseExtractor` (`app/extractors/base_extractor.py`) y regístralo en `EXTRACTOR_MAP`. Mientras no exista, un `document_type` registrado en `Config.DOCUMENT_TYPES` sin extractor devuelve campos vacíos con `extractor=regex`.
-- **Nuevo proveedor de IA**: hereda de `BaseAiExtractor` (`app/extractors/ai/base_ai_extractor.py`; el prompt es compartido en `_build_prompt`) y regístralo en `providers` dentro de `AiExtractor._resolve_provider`. Agrega su config a `Config` y `.env.example`.
+- **Nuevo proveedor de IA**: hereda de `BaseAiExtractor` (`app/extractors/ai/base_ai_extractor.py`; el prompt es compartido en `_build_prompt`) regístralo en `providers` dentro de `AiExtractor._resolve_provider` **y** en `Config.AI_PROVIDERS` (lo usa la validación del request). Agrega su config a `Config` y `.env.example`.
 
 ## Convenciones de código
 
 - **Inglés en todo el código**: nombres, comentarios y docstrings. Docstring estilo Google en cada clase y método público (`Args:`, `Returns:`, `Raises:`), como el código existente.
 - Dicts internos y de extracción en snake_case; la respuesta HTTP se convierte a camelCase **una sola vez**, en el service (`dict_to_camel_case`). No conviertas dentro de los extractores.
 - Toda respuesta pasa por `ResponseHelper` (`app/helpers/response_helper.py`): `success()`, `error()`, `validation_error()` envuelven `{ok, status, message, data, meta}`. `meta.exception` solo se agrega fuera de `production`.
-- Errores esperados: lanza una subclase de `AppException` (`app/exceptions/`) con su `status_code`; el handler (`app/exceptions/handler.py`) la responde. Cualquier otra excepción termina en 500 genérico.
+- Errores esperados: lanza una subclase de `AppException` (`app/exceptions/`) con su `status_code`; el handler (`app/exceptions/handler.py`) la responde. Los `HTTPException` de Werkzeug (404, 405, 413…) conservan su status. Cualquier otra excepción termina en 500 genérico.
+- Validación de requests: decorador `validate(schema)` (`app/validators/base_validator.py`), que pasa el resultado de `schema.load()` a la ruta como `validated`. Nunca vuelvas a leer `request.form` en el controller: lo que llega es exactamente lo que validó el schema. Valores permitidos (estrategias, proveedores, tipos) viven en `Config`.
 - `Config` (`app/config/__init__.py`) es la única fuente de configuración de entorno: no uses `os.getenv` disperso.
 - Logging con `Logger` (`app/helpers/logger.py`) usando pares clave-valor; nunca loguees texto completo de documentos ni datos personales.
 - Prefiere soluciones simples a la abstracción prematura.

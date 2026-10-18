@@ -38,6 +38,7 @@ class AiExtractor(BaseExtractor):
         from app.extractors.ai.gemini_extractor import GeminiExtractor
         from app.extractors.ai.groq_extractor import GroqExtractor
 
+        # Keep keys in sync with Config.AI_PROVIDERS (used by request validation).
         providers = {
             "gemini": GeminiExtractor,
             "groq": GroqExtractor,

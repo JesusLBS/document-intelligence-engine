@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, validates, validates_schema, ValidationError
+from marshmallow import Schema, fields, validate, validates, validates_schema, ValidationError
 from werkzeug.datastructures import FileStorage
 
 from app.config import Config
@@ -10,7 +10,10 @@ class ProcessDocumentSchema(Schema):
     file = fields.Raw(required=True)
     document_type = fields.Str(required=True)
     requested_fields = fields.List(fields.Str(), load_default=[], data_key="fields")
-    extractor = fields.Str(load_default=Config.DEFAULT_EXTRACTOR)
+    extractor = fields.Str(
+        load_default=Config.DEFAULT_EXTRACTOR,
+        validate=validate.OneOf(sorted(Config.EXTRACTOR_STRATEGIES)),
+    )
     language = fields.Str(load_default=Config.DEFAULT_LANGUAGE)
     include_raw_text = fields.Bool(load_default=True)
     from_page = fields.Int(load_default=None, allow_none=True)
@@ -18,7 +21,11 @@ class ProcessDocumentSchema(Schema):
     force_ocr = fields.Bool(load_default=False)
     debug_mode = fields.Bool(load_default=False)
     all_fields = fields.Bool(load_default=False)
-    provider = fields.Str(load_default=None, allow_none=True)
+    provider = fields.Str(
+        load_default=None,
+        allow_none=True,
+        validate=validate.OneOf(sorted(Config.AI_PROVIDERS)),
+    )
 
     @validates("file")
     def validate_file(self, value):
