@@ -1,8 +1,10 @@
 import re
 from datetime import date
 
-# Extracted fields that hold a single calendar date (comprobante de domicilio).
-DATE_FIELDS = {"fecha_emision", "periodo_inicio", "periodo_fin", "fecha_limite_pago"}
+# Extracted fields that hold a single calendar date (comprobante de domicilio, INE birth date).
+DATE_FIELDS = {"fecha_emision", "periodo_inicio", "periodo_fin", "fecha_limite_pago", "fecha_nacimiento"}
+# Fields that hold an expiration year: the INE prints "VIGENCIA 2021-2031" and is valid through 2031.
+YEAR_FIELDS = {"fecha_vencimiento"}
 
 # Spanish month names and the abbreviations printed on Mexican bills (SEPT appears besides SEP).
 MONTHS = {
@@ -91,14 +93,40 @@ def normalize_date(value):
     return value
 
 
+def normalize_expiration_year(value):
+    """
+    Reduce an expiration as printed ("2021-2031", "2021 - 2031", "VIGENCIA 2031") to its last year.
+
+    Args:
+        value: Extracted expiration (any type; non-strings are returned as-is).
+
+    Returns:
+        The year as "YYYY", or the original value when it holds no year or more than two.
+    """
+    if not isinstance(value, str):
+        return value
+
+    years = re.findall(r"(?<!\d)(\d{4})(?!\d)", value)
+    if 1 <= len(years) <= 2:
+        return years[-1]
+    return value
+
+
 def normalize_dates(fields: dict) -> dict:
     """
-    Normalize the known date fields to ISO; other keys pass through.
+    Normalize the known date fields to ISO and expiration fields to a year; other keys pass through.
 
     Args:
         fields (dict): Extracted fields in snake_case.
 
     Returns:
-        dict: Same fields with known dates in YYYY-MM-DD.
+        dict: Same fields with known dates in YYYY-MM-DD and expirations as YYYY.
     """
-    return {key: normalize_date(value) if key in DATE_FIELDS else value for key, value in fields.items()}
+    normalized = {}
+    for key, value in fields.items():
+        if key in DATE_FIELDS:
+            value = normalize_date(value)
+        elif key in YEAR_FIELDS:
+            value = normalize_expiration_year(value)
+        normalized[key] = value
+    return normalized

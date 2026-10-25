@@ -16,6 +16,7 @@ The core idea: **nothing relies on the model "behaving"**. What matters is enfor
 | Per-tool adapters | [`CLAUDE.md`](../CLAUDE.md), [`GEMINI.md`](../GEMINI.md) | Only import `AGENTS.md` and add what is exclusive to their tool. They never copy rules, which would drift |
 | Status (current phase, what works, bugs) | [`docs/project/STATUS.md`](./project/STATUS.md) | The only place status is asserted |
 | Architecture, decisions and scope | [`docs/project/PROJECT_PLAN.md`](./project/PROJECT_PLAN.md) | The *why*; never marks progress |
+| Hard-to-reverse decisions | [`docs/decisions/`](./decisions/README.md) (ADR) | Written and approved **before** the code: options, decision, consequences. Example: [ADR 0001](./decisions/0001-business-validation-rules.md), who validates a document (the AI or the app) |
 
 Keeping status apart from the plan avoids the most common failure in AI-assisted projects: documents saying "in progress" about something already done, or "done" about something never built.
 
@@ -79,6 +80,7 @@ The proof that the process works is the mistakes that never reached `main`. Each
 | `debug_mode` saved nothing for digital PDFs; Gemini never got the document | The developer tested a real CFE bill | Per-request debug independent of OCR; Gemini gets the PDF of the requested pages (issues 21 and 22) |
 | A daily-quota 429 was reported as "overloaded" | Developer test | The message says which quota and when it resets (issue 23) |
 | A test passed in Docker and failed in CI | The PR's CI run | `make verify` reproduces the CI environment (issue 24) |
+| A real INE looked valid when tested, but `validation.valid` was `false`: the OCR read `0` as `O` at CURP position 17, a change the check digit cannot detect, and the CURP vs birth date rule flagged it | Review of that request's debug snapshot | Global `verdict` always visible, and the century resolved from the birth date ([ADR 0001](./decisions/0001-business-validation-rules.md)) |
 | The `.env` hook denied `.env*` only where a real `.env` existed (bash expanded the wildcard) | CI on the PR to `main` | `make verify` runs on a clean copy, and the hook tests run in empty and populated folders (issue 26). It also showed that branches need protection: that PR was merged with a red check |
 
 ## 6. Limits (to avoid overselling)

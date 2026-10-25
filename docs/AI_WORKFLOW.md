@@ -16,6 +16,7 @@ La idea central: **no se confía en que el modelo "se porte bien"**. Lo importan
 | Adaptadores por herramienta | [`CLAUDE.md`](../CLAUDE.md), [`GEMINI.md`](../GEMINI.md) | Solo importan `AGENTS.md` y agregan lo exclusivo de su herramienta. Nunca copian reglas, porque se desincronizan |
 | Estado (fase actual, qué funciona, bugs) | [`docs/project/STATUS.md`](./project/STATUS.md) | Único lugar donde se afirma el estado |
 | Arquitectura, decisiones y alcance | [`docs/project/PROJECT_PLAN.md`](./project/PROJECT_PLAN.md) | El *por qué*; nunca marca avance |
+| Decisiones difíciles de revertir | [`docs/decisions/`](./decisions/README.md) (ADR) | Se escriben y aprueban **antes** del código: opciones, decisión, consecuencias. Ejemplo: [ADR 0001](./decisions/0001-business-validation-rules.md), quién valida un documento (la IA o la app) |
 
 Separar estado de plan evita el error más común en proyectos asistidos por IA: documentos que dicen "en progreso" algo que ya se terminó, o "listo" algo que nunca se hizo.
 
@@ -79,6 +80,7 @@ La prueba de que el proceso funciona son los errores que no llegaron a `main`. C
 | `debug_mode` no guardaba nada en PDFs digitales; Gemini no recibía el documento | El desarrollador probó un recibo real de CFE | Debug por petición e independiente del OCR; Gemini recibe el PDF del rango (issues 21 y 22) |
 | Un 429 por cuota diaria se reportaba como "saturación" | Prueba del desarrollador | El mensaje dice qué cuota y cuándo se reinicia (issue 23) |
 | Un test pasaba en Docker y fallaba en el CI | El CI del PR | `make verify` reproduce el entorno del CI (issue 24) |
+| Una INE real se reportó como válida al probarla, pero `validation.valid` era `false`: el OCR leyó `0` como `O` en la posición 17 del CURP, un cambio que el dígito verificador no detecta, y la regla CURP vs fecha de nacimiento lo marcó | Revisión del snapshot de debug de esa petición | Veredicto global `verdict` siempre visible y corrección del siglo con la fecha de nacimiento como evidencia ([ADR 0001](./decisions/0001-business-validation-rules.md)) |
 | El hook de `.env` bloqueaba `.env*` solo donde existía un `.env` real (bash expandía el comodín) | El CI del PR a `main` | `make verify` corre sobre una copia limpia, y los tests del hook corren en carpetas vacías y con archivos (issue 26). También mostró que hace falta proteger las ramas: ese PR se mergeó con el check en rojo |
 
 ## 6. Límites (para no exagerar)

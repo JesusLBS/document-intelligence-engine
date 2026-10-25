@@ -542,6 +542,8 @@ Business rules validate.
 
 Validation logic must always remain inside the application.
 
+Decision, structure and response format: [ADR 0001](../decisions/0001-business-validation-rules.md) (deterministic rules in `app/rules/`, one registry line per rule, AI observations such as `documento_detectado` as data, "today" in `Config.TZ`, HTTP 200 with a `validation` block).
+
 ---
 
 # AI Integration

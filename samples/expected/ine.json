@@ -1,7 +1,7 @@
 {
   "sample": "ine_sample.pdf",
   "document_type": "ine",
-  "note": "Public INE example from the internet: values are stored as hashes (sha256 of the uppercase value, first 16 hex), never in clear. Only fields with a stable format today, where Groq and Gemini agreed exactly (2026-10-25). Pending for Phase 4 (INE): field descriptions + date normalization (Groq returns fecha_nacimiento as DD/MM/YYYY or ISO, fecha_vencimiento as YYYY-YYYY or YYYY), then add dates and surnames from Gemini with --provider gemini --print-reference.",
+  "note": "Public INE example from the internet: personal values are stored as hashes (sha256 of the uppercase value, first 16 hex), never in clear. Dates normalized (birth date ISO, expiration YYYY) since Phase 4; nombre, curp, clave_elector and the dates matched between Groq and Gemini (2026-10-25). Surnames pending: add them from Gemini (--provider gemini --print-reference) when its quota allows.",
   "min_match": {},
   "fields": {
     "nombre": {
@@ -12,6 +12,13 @@
     },
     "clave_elector": {
       "sha256": "7725b8cd251fd1f8"
-    }
+    },
+    "fecha_nacimiento": {
+      "sha256": "6f2ef9ac1e566805"
+    },
+    "fecha_vencimiento": {
+      "sha256": "9212e5e6ef410652"
+    },
+    "documento_detectado": "ine"
   }
 }

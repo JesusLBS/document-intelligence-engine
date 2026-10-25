@@ -7,10 +7,11 @@ from app.config import Config
 from app.factories.document_processor_factory import DocumentProcessorFactory
 from app.factories.extractor_factory import ExtractorFactory
 from app.helpers.debug_store import DebugStore
+from app.rules.validation_engine import build_verdict, validate
 from app.ocr.tesseract_ocr import TesseractOcr
 from app.utils.case_converter import dict_to_camel_case
 from app.utils.date_normalizer import normalize_dates
-from app.utils.id_normalizer import normalize_identifiers
+from app.utils.id_normalizer import normalize_identifiers, recover_identifiers, resolve_curp_century
 from app.extractors.extraction_context import ExtractionContext
 
 
@@ -50,7 +51,8 @@ class DocumentService:
                 a new one is generated when called outside a request.
 
         Returns:
-            dict: Processing result with extracted fields in camelCase.
+            dict: Processing result with extracted fields in camelCase and `validation` (business rules
+                for the document type, or None for a custom `fields` list or a type without rules).
         """
         extension = self._get_extension(file.filename)
         request_id = request_id or str(uuid.uuid4())
@@ -128,16 +130,35 @@ class DocumentService:
                 })
 
             extracted = extractor.extract(raw_text, fields_to_extract, context)
-            # Fix OCR look-alike errors in structured IDs (CURP, clave de elector), whatever the extractor.
+            # Fix OCR look-alike errors in structured IDs (CURP, clave de elector), whatever the extractor,
+            # and recover one the provider left empty when the text holds exactly one valid candidate.
             extracted = normalize_identifiers(extracted)
+            extracted = recover_identifiers(extracted, raw_text)
             # Dates in ISO (YYYY-MM-DD) even when the provider or OCR returns them as printed ("15 OCT 26").
             extracted = normalize_dates(extracted)
+            # Needs the ISO birth date: an O/0 swap in the CURP homoclave is invisible to its check digit.
+            extracted = resolve_curp_century(extracted)
+
+            # Business rules (docs/decisions/0001): only on a full extraction. With a custom `fields`
+            # list the document as a whole cannot be judged, so validation is null.
+            custom_fields = bool(requested_fields) and not all_fields
+            validation = None if custom_fields else validate(document_type, extracted)
+            verdict = build_verdict(
+                document_type,
+                validation,
+                "Not validated: a custom fields list was requested." if custom_fields
+                else f"Not validated: no business rules for {document_type} yet.",
+            )
 
             if debug:
                 debug.save_json("result.json", extracted)
+                if validation:
+                    debug.save_json("validation.json", {**validation, "verdict": verdict})
                 debug.log_saved()
 
             processor_result["extractedFields"] = dict_to_camel_case(extracted)
+            processor_result["validation"] = validation
+            processor_result["verdict"] = verdict
             return processor_result
         finally:
             self._cleanup(file_path)

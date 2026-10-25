@@ -29,6 +29,7 @@ Current use cases:
 - **Smart PDF pipeline**: PyMuPDF diagnoses text density and chooses between embedded extraction or OCR.
 - **OCR**: pages rasterized at 400 DPI and cropped to their content area (color, no grayscale), Tesseract with sparse-text fallback, and positional correction of typical OCR errors in CURP and clave de elector.
 - **Interchangeable AI**: `AiExtractor` with Gemini (PDF of the requested pages + text) and Groq (text-only) providers.
+- **Business validation**: deterministic rules per document type (INE: expiration on Mexico's calendar, CURP check digit, CURP vs birth date and clave de elector); the AI only reports observations ([ADR 0001](./decisions/0001-business-validation-rules.md)).
 - **Input validation**: Marshmallow schemas, centralized exceptions, structured logging.
 - **Containerization and CI**: Docker + nginx as reverse proxy; GitHub Actions runs pytest on every PR.
 
@@ -115,15 +116,17 @@ document-intelligence-engine/
 │   │   ├── pdf/             # PdfProcessor (diagnosis, requested pages), page_renderer (render + crop)
 │   │   └── image/ excel/ csv/ word/   # empty extension points (possible extensions, see PROJECT_PLAN)
 │   ├── routes/              # /api/v1 blueprint
+│   ├── rules/               # Business rules per document type (registry, validation_engine)
 │   ├── schemas/             # Marshmallow schemas
 │   ├── services/            # DocumentService (orchestrator)
-│   ├── utils/               # curp_decoder, case_converter, id_normalizer (CURP/clave), date_normalizer (ISO)
+│   ├── utils/               # curp_decoder, case_converter, id_normalizer (CURP/clave, check digit), date_normalizer (ISO)
 │   └── validators/          # Request validation (decorator)
 ├── tests/                   # pytest (includes the Claude Code hooks)
 ├── docs/
 │   ├── project/             # PROJECT_PLAN.md (design and roadmap), STATUS.md (status)
 │   ├── screenshots/         # Postman screenshots used in the README
 │   ├── AI_WORKFLOW.md       # How it is developed with AI (and AI_WORKFLOW.en.md)
+│   ├── decisions/           # Architecture decisions (ADR)
 │   └── README.en.md         # This file
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
@@ -356,13 +359,38 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
       "nombre": "JUAN",
       "apellidoPaterno": "PEREZ",
       "apellidoMaterno": "LOPEZ",
-      "curp": "XAXX010101HDFAAA09",
-      "claveElector": "PRPLJN01010109H000"
+      "curp": "PELJ900515HDFRPN07",
+      "fechaNacimiento": "1990-05-15",
+      "fechaVencimiento": "2031",
+      "claveElector": "PRLPJN90051509H000",
+      "documentoDetectado": "ine"
+    },
+    "validation": {
+      "valid": true,
+      "checkedOn": "2026-10-25",
+      "summary": { "passed": 8, "failed": 0, "warnings": 0, "skipped": 0 },
+      "rules": [
+        { "code": "ine.not_expired", "status": "passed", "severity": "error",
+          "message": "Valid through December 31 of its expiration year (checked on 2026-10-25).",
+          "fields": ["fechaVencimiento"] },
+        { "code": "ine.curp_matches_birth_date", "status": "passed", "severity": "error",
+          "message": "The CURP birth date matches fechaNacimiento.", "fields": ["curp", "fechaNacimiento"] }
+      ]
+    },
+    "verdict": {
+      "status": "valid",
+      "documentType": "ine",
+      "message": "The ine document is valid: every rule passed.",
+      "failedRules": [],
+      "warnings": []
     },
     "text": null
   }
 }
 ```
+
+**Business validation (`validation`).** With the default fields, the response includes the verdict of the app's deterministic rules: the AI extracts and reports what it sees (`documentoDetectado`), the rules decide ([ADR 0001](./decisions/0001-business-validation-rules.md)). INE rules: required fields, detected document, CURP structure and check digit, clave de elector structure, expiration (against today's date in Mexico's time zone, `TZ`), CURP vs birth date, clave de elector vs CURP and name initials (warning). The response stays `200`. **`verdict.status`** is the global answer: `valid`, `invalid` (a content rule failed), `incomplete` (only data is missing: it can be neither confirmed nor rejected) or `not_validated` (custom `fields` list or types without rules yet, such as CSF and comprobante; `validation` is `null` then).
+
 
 #### Address proof example (ai)
 
