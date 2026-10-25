@@ -6,6 +6,10 @@ from app.extractors.extraction_context import ExtractionContext
 class BaseExtractor(ABC):
     """Base class for all document extractors."""
 
+    # True when the extractor reads the document file itself (not only its text); the service
+    # then exports the requested pages and passes them in ExtractionContext.document_file.
+    accepts_document_file: bool = False
+
     @abstractmethod
     def extract(self, text: str, requested_fields: list[str], context: ExtractionContext | None = None) -> dict:
         """
@@ -15,7 +19,7 @@ class BaseExtractor(ABC):
             text (str): Raw text from document processor.
             requested_fields (list[str]): Fields requested by client. Empty means all.
             context (ExtractionContext, optional): Request details (document type, diagnosis,
-                page images). Extractors that don't need it ignore it.
+                document file). Extractors that don't need it ignore it.
 
         Returns:
             dict: Extracted fields in snake_case.

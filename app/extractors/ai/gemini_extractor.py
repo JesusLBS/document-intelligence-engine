@@ -10,6 +10,8 @@ class GeminiExtractor(BaseAiExtractor):
     """AI extractor using Google Gemini API (multimodal support)."""
 
     provider_name = "gemini"
+    # Gemini reads PDFs natively (text layer + page images), so it gets the document itself.
+    accepts_document_file = True
 
     # Thinking tokens count against this limit on Gemini 3, so it must leave room for them.
     MAX_OUTPUT_TOKENS = 8192
@@ -21,11 +23,12 @@ class GeminiExtractor(BaseAiExtractor):
         document_type: str = None,
         diagnosis: dict = None,
         all_fields: bool = False,
-        image_paths: list[str] = None,
+        document_file: str = None,
+        document_mime_type: str = None,
         name_hints: dict = None,
     ) -> dict:
         """
-        Extract fields from text and/or images using Gemini LLM.
+        Extract fields from the document file (and its text as reference) using Gemini.
 
         Args:
             text (str): Raw text extracted from document.
@@ -33,7 +36,8 @@ class GeminiExtractor(BaseAiExtractor):
             document_type (str, optional): Document type for context.
             diagnosis (dict, optional): Diagnosis metadata for context.
             all_fields (bool): If True, extract all available fields.
-            image_paths (list[str], optional): Paths to page images to send alongside text.
+            document_file (str, optional): File with only the requested pages, sent inline (base64).
+            document_mime_type (str, optional): Its media type ('application/pdf', 'image/png'...).
             name_hints (dict, optional): Pre-decoded CURP name initials hints.
 
         Returns:
@@ -43,8 +47,8 @@ class GeminiExtractor(BaseAiExtractor):
             AiProviderNotConfiguredException: If GEMINI_API_KEY is empty.
             AiProviderException: If the call fails or the answer is blocked, truncated or not JSON.
         """
-        if not text.strip() and not image_paths:
-            Logger.warning("GeminiExtractor received no text and no images", document_type=document_type)
+        if not text.strip() and not document_file:
+            Logger.warning("GeminiExtractor received no text and no document", document_type=document_type)
             return {}
 
         self._require_api_key(Config.GEMINI_API_KEY, "GEMINI_API_KEY")
@@ -55,8 +59,9 @@ class GeminiExtractor(BaseAiExtractor):
             "Sending request to Gemini API",
             document_type=document_type,
             model=Config.GEMINI_MODEL,
-            with_images=bool(image_paths),
-            image_count=len(image_paths) if image_paths else 0,
+            with_document=bool(document_file),
+            document_mime_type=document_mime_type,
+            text_chars=len(text.strip()),
         )
 
         url = f"{Config.GEMINI_API_URL}/{Config.GEMINI_MODEL}:generateContent"
@@ -68,9 +73,8 @@ class GeminiExtractor(BaseAiExtractor):
 
         parts = [{"text": prompt}]
 
-        if image_paths:
-            for image_path in image_paths:
-                parts.append(self._build_image_part(image_path))
+        if document_file:
+            parts.append(self._build_file_part(document_file, document_mime_type))
 
         payload = {
             "contents": [{"parts": parts}],
@@ -148,22 +152,23 @@ class GeminiExtractor(BaseAiExtractor):
 
         return text
 
-    def _build_image_part(self, image_path: str) -> dict:
+    def _build_file_part(self, file_path: str, mime_type: str) -> dict:
         """
-        Build a Gemini inline_data part from an image file.
+        Build a Gemini inline_data part from a document file (PDF up to 50 MB, or an image).
 
         Args:
-            image_path (str): Absolute path to the image file.
+            file_path (str): Path to the file.
+            mime_type (str): Its media type.
 
         Returns:
             dict: Gemini-compatible inline_data part.
         """
-        with open(image_path, "rb") as f:
+        with open(file_path, "rb") as f:
             encoded = base64.b64encode(f.read()).decode("utf-8")
 
         return {
             "inline_data": {
-                "mime_type": "image/png",
+                "mime_type": mime_type,
                 "data": encoded,
             }
         }

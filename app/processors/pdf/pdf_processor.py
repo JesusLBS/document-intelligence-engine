@@ -6,10 +6,13 @@ from app.exceptions.app_exception import AppException
 from app.exceptions.invalid_document_exception import InvalidDocumentException
 from app.processors.base.base_processor import BaseProcessor
 from app.helpers.logger import Logger
+from app.processors.pdf.page_renderer import render_pdf_pages
 
 
 class PdfProcessor(BaseProcessor):
     """PDF document processor using PyMuPDF."""
+
+    mime_type = "application/pdf"
 
     def process(self, file_path: str, from_page: int = None, to_page: int = None) -> dict:
         """
@@ -74,6 +77,41 @@ class PdfProcessor(BaseProcessor):
             "pagesAnalysis": pages_analysis,
             "diagnosis": diagnosis,
         }
+
+    def render_pages(self, file_path: str, from_page: int = None, to_page: int = None) -> list:
+        """
+        Render the requested pages as color images cropped to their content.
+
+        Args:
+            file_path (str): Absolute path to the PDF file.
+            from_page (int, optional): Start page (1-indexed).
+            to_page (int, optional): End page (1-indexed).
+
+        Returns:
+            list[Image.Image]: One image per page, in page order.
+        """
+        return render_pdf_pages(file_path, from_page=from_page, to_page=to_page)
+
+    def export_pages(self, file_path: str, output_path: str, from_page: int = None, to_page: int = None) -> str:
+        """
+        Write a PDF holding only the requested pages (text layer and images intact).
+
+        Args:
+            file_path (str): Absolute path to the PDF file.
+            output_path (str): Where to write the copy.
+            from_page (int, optional): Start page (1-indexed). None means first page.
+            to_page (int, optional): End page (1-indexed). None means last page.
+
+        Returns:
+            str: output_path.
+        """
+        with fitz.open(file_path, filetype="pdf") as source, fitz.open() as copy:
+            start, end = self._resolve_page_range(from_page, to_page, len(source))
+            copy.insert_pdf(source, from_page=start, to_page=end - 1)
+            copy.save(output_path, garbage=3, deflate=True)
+
+        Logger.info("PDF pages exported", pages=f"{start + 1}-{end}")
+        return output_path
 
     def _resolve_page_range(self, from_page: int | None, to_page: int | None, total_pages: int) -> tuple[int, int]:
         """

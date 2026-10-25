@@ -78,6 +78,16 @@ class TestGroqResponse:
 
         assert error.value.status_code == 502
 
+    def test_rate_limit_uses_retry_after_header(self, fake_post):
+        body = {"error": {"message": "Rate limit reached ...", "type": "tokens", "code": "rate_limit_exceeded"}}
+        fake_post.response = FakeResponse(429, body, headers={"retry-after": "7"})
+
+        with pytest.raises(AiProviderException) as error:
+            extract()
+
+        assert error.value.status_code == 503
+        assert error.value.message == "AI provider 'groq' failed: exceeded its quota (rate_limit_exceeded); retry in 7s"
+
     def test_empty_answer_reports_finish_reason(self, fake_post):
         fake_post.response = FakeResponse(200, groq_body("", finish_reason="length"))
 

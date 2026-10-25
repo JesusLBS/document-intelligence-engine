@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check through nginx: health + a real OCR run on the bundled sample PDF.
-# Uses extractor=regex, so no AI API keys are needed (INE has no regex extractor: fields come back empty).
+# Sends the INE sample as document_type=csf + extractor=regex: INE is AI-only (regex is rejected with 422),
+# and this way no AI API keys are needed. Only the OCR text is checked; the CSF fields come back empty.
 # Fails if the OCR text does not contain the card's labels: a 200 with noisy text is a broken pipeline.
 . "$(dirname "$0")/lib.sh"
 
@@ -26,7 +27,7 @@ check "health" "$(curl -s --max-time 30 --retry 3 --retry-delay 1 --retry-all-er
 
 PROCESS="$(curl -s --max-time 180 -X POST "$BASE/documents/process" \
   -F "file=@$SAMPLE" \
-  -F "document_type=ine" \
+  -F "document_type=csf" \
   -F "extractor=regex" \
   -F "force_ocr=true" \
   -F "include_raw_text=true")"

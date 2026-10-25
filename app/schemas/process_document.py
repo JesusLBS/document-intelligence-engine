@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields, validate, validates, validates_schema, ValidationError
+from marshmallow import Schema, fields, post_load, validate, validates, validates_schema, ValidationError
 from werkzeug.datastructures import FileStorage
 
 from app.config import Config
@@ -10,8 +10,9 @@ class ProcessDocumentSchema(Schema):
     file = fields.Raw(required=True)
     document_type = fields.Str(required=True)
     requested_fields = fields.List(fields.Str(), load_default=[], data_key="fields")
+    # No load_default: the default depends on document_type (resolved in resolve_extractor).
     extractor = fields.Str(
-        load_default=Config.DEFAULT_EXTRACTOR,
+        load_default=None,
         validate=validate.OneOf(sorted(Config.EXTRACTOR_STRATEGIES)),
     )
     include_raw_text = fields.Bool(load_default=True)
@@ -96,3 +97,33 @@ class ProcessDocumentSchema(Schema):
 
         if from_page and to_page and from_page > to_page:
             raise ValidationError({"from_page": ["from_page cannot be greater than to_page."]})
+
+    @validates_schema
+    def validate_extractor_for_type(self, data, **kwargs):
+        """
+        Reject extractor=regex for document types that have no regex extractor.
+
+        Args:
+            data (dict): Deserialized schema data.
+
+        Raises:
+            ValidationError: If regex is requested for an AI-only document type.
+        """
+        document_type = data.get("document_type")
+        if data.get("extractor") == "regex" and document_type in Config.AI_ONLY_DOCUMENT_TYPES:
+            raise ValidationError({"extractor": [f"Document type '{document_type}' only supports extractor 'ai'."]})
+
+    @post_load
+    def resolve_extractor(self, data, **kwargs):
+        """
+        Apply the per-type default extractor when the request does not send one.
+
+        Args:
+            data (dict): Deserialized schema data.
+
+        Returns:
+            dict: Data with `extractor` always set.
+        """
+        if data.get("extractor") is None:
+            data["extractor"] = Config.default_extractor_for(data["document_type"])
+        return data

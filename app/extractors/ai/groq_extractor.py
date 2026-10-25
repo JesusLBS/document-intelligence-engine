@@ -19,7 +19,8 @@ class GroqExtractor(BaseAiExtractor):
         document_type: str = None,
         diagnosis: dict = None,
         all_fields: bool = False,
-        image_paths: list[str] = None,
+        document_file: str = None,
+        document_mime_type: str = None,
         name_hints: dict = None,
     ) -> dict:
         """
@@ -31,7 +32,8 @@ class GroqExtractor(BaseAiExtractor):
             document_type (str, optional): Document type for context.
             diagnosis (dict, optional): Diagnosis metadata for context.
             all_fields (bool): If True, extract all available fields.
-            image_paths (list[str], optional): Ignored — Groq does not support images.
+            document_file (str, optional): Ignored — Groq reads text only (accepts_document_file is False).
+            document_mime_type (str, optional): Ignored.
             name_hints (dict, optional): Pre-decoded CURP name initials hints.
 
         Returns:
@@ -41,9 +43,6 @@ class GroqExtractor(BaseAiExtractor):
             AiProviderNotConfiguredException: If GROQ_API_KEY is empty.
             AiProviderException: If the call fails or the answer is empty or not JSON.
         """
-        if image_paths:
-            Logger.warning("GroqExtractor does not support images, ignoring image_paths", document_type=document_type)
-
         if not text or not text.strip():
             Logger.warning("GroqExtractor received empty text", document_type=document_type)
             return {}
