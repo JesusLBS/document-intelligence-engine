@@ -1,9 +1,9 @@
 # Short entry points for the Docker environment (the main one). Logic lives in scripts/.
 .DEFAULT_GOAL := help
-.PHONY: help up build down restart ps logs shell test verify smoke doctor
+.PHONY: help up build down restart ps logs shell test verify smoke check-extraction doctor
 
 help: ## List available commands
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  make %-9s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  make %-17s %s\n", $$1, $$2}'
 
 up: ## Start in the background and wait until the API is healthy
 	@bash scripts/up.sh
@@ -34,6 +34,9 @@ verify: ## Run what CI runs, before pushing
 
 smoke: ## End-to-end check: health + OCR on the sample PDF
 	@bash scripts/smoke.sh
+
+check-extraction: ## Live AI extraction vs samples/expected (default groq; ARGS="--provider all")
+	@docker compose exec -T app python scripts/check_extraction.py $(ARGS)
 
 doctor: ## Check machine prerequisites (read-only)
 	@bash scripts/doctor.sh

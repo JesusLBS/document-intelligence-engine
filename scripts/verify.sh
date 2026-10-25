@@ -10,9 +10,17 @@ if ! app_running; then
 fi
 
 echo "--- tests (pytest), without poppler/tesseract like CI ---"
-# The CI runner (ubuntu-latest) has no poppler or Tesseract; the container does. Running with
-# PATH limited to Python's bin hides them, so a test that silently needs them fails here too.
-docker compose exec -T app env PATH=/usr/local/bin python -m pytest tests/ -v -p no:cacheprovider
+# The CI runner (ubuntu-latest) has bash/grep/sed but no poppler or Tesseract; the container has all.
+# Failing stubs placed first on PATH hide only those tools, so a test that silently needs them
+# fails here too (a trimmed PATH would also hide bash/grep, which the hook tests need).
+docker compose exec -T app sh -c '
+  stubs="$(mktemp -d)"
+  for tool in pdfinfo pdftoppm pdftocairo tesseract; do
+    printf "#!/bin/sh\necho \"%s is not installed on the CI runner\" >&2\nexit 127\n" "$tool" > "$stubs/$tool"
+    chmod +x "$stubs/$tool"
+  done
+  PATH="$stubs:$PATH" python -m pytest tests/ -v -p no:cacheprovider
+'
 
 echo ""
 echo "=== All checks passed ==="

@@ -15,6 +15,15 @@
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-git-commit.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Read|Edit|Write|Grep|Glob|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-env-access.sh\""
+          }
+        ]
       }
     ]
   }
