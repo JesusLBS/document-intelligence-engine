@@ -18,7 +18,7 @@ Current use cases:
 
 - **CSF** (Mexican tax status certificate): regex extraction of RFC, CURP, name, tax regime, etc.
 - **INE** (Mexican voter ID): AI extraction with CURP hints and multimodal support (Gemini).
-- Other registered types (`comprobante_domicilio`, `estado_cuenta`, `licencia_profesional`) work with `extractor=ai` or return empty fields with regex.
+- **Comprobante de domicilio** (proof of address: electricity, water, gas, phone, internet bills): AI extraction of holder, itemized address, provider, service number and dates normalized to ISO.
 
 ---
 
@@ -69,11 +69,11 @@ DocumentProcessorFactory → PdfProcessor
   ↓
 Diagnosis (OCR required?)
   ├── NO  → Embedded text extraction
-  └── YES → TesseractOcr (crop to content → text + temp images)
+  └── YES → TesseractOcr (requested pages cropped to content → text)
   ↓
 ExtractorFactory
   ├── CsfExtractor (regex)
-  ├── AiExtractor → Gemini / Groq
+  ├── AiExtractor → Gemini (PDF of the requested pages + text) / Groq (text only)
   └── PassthroughExtractor (regex fallback)
   ↓
 JSON Response (camelCase fields)
@@ -113,9 +113,9 @@ document-intelligence-engine/
 │   └── README.en.md         # This file
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
-├── scripts/                 # up, verify, smoke, doctor (called by the Makefile)
-├── samples/                 # Sample documents with fictitious data
-├── storage/                 # debug/, logs/, temp_images/ (runtime, git-ignored)
+├── scripts/                 # up, verify, smoke, doctor (called by the Makefile) and generate_samples.py
+├── samples/                 # Samples: public INE and fictitious address proofs (scripts/generate_samples.py)
+├── storage/                 # debug/, logs/ (runtime, git-ignored)
 ├── uploads/                 # Temporary uploads (git-ignored)
 ├── .github/workflows/       # CI (pytest)
 ├── .githooks/               # pre-push hook blocking direct pushes to main/develop
@@ -142,6 +142,8 @@ document-intelligence-engine/
 - `make` (bundled with macOS/Linux)
 - `/etc/hosts` entry: `127.0.0.1 document-intelligence.test` (local domain served by nginx)
 - AI keys only if you use `extractor=ai`: `GEMINI_API_KEY` and/or `GROQ_API_KEY`
+
+> **Free AI accounts.** Both keys can be on the free tier, which limits requests (Gemini, October 2026: **20 requests per day per model** on `gemini-3.6-flash`). Past it, the API answers 503 with `exceeded its quota (<quota>, limit N); retry in …`. The wait is the provider's estimate and is not exact (Google said ~9 h and accepted a request 83 s later). Meanwhile, use the other provider (`provider=groq` / `provider=gemini`) or move the account to a paid plan. Current limits: [Gemini](https://ai.google.dev/gemini-api/docs/rate-limits) · [Groq](https://console.groq.com/docs/rate-limits).
 
 `make doctor` checks all of this (read-only, installs nothing).
 
@@ -191,7 +193,7 @@ API at **http://document-intelligence.test** (nginx on port 80 → Flask on app:
 | Every request takes ~5 s | `/etc/resolver/test` sends `.test` lookups to Laravel Herd's DNS and Herd is stopped: macOS waits 5 s before using `/etc/hosts`. Start Herd or review that file. `make doctor` detects it (`dns` line) |
 | `env file .env not found` | Run `cp .env.example .env` |
 | Changed `requirements.txt` and nothing changed | `make build` |
-| `extractor=ai` returns 503 | The provider key (`GEMINI_API_KEY` / `GROQ_API_KEY`) is missing in `.env`; add it and `make up` (recreates the container; `make restart` does not reload `.env`) |
+| `extractor=ai` returns 503 | Read the message: **"is not configured"** → the key (`GEMINI_API_KEY` / `GROQ_API_KEY`) is missing in `.env`; add it and `make up` (`make restart` does not reload `.env`). **"exceeded its quota (…)"** → the provider quota is used up: it says which one and when it resets (Gemini's free tier allows 20 requests per day per model); wait or use the other provider. **"temporarily unavailable"** → the provider is overloaded; retry in a few seconds |
 | `extractor=ai` returns 502 or 504 | The provider failed: the message says why (HTTP, blocked or truncated answer, timeout). `HTTP 404` usually means a shut-down model: check `GEMINI_MODEL` / `GROQ_MODEL` against the deprecation pages |
 
 ### Optional: local Python (no Docker)
@@ -263,15 +265,15 @@ Processes a PDF document and extracts fields based on type and strategy.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `file` | file | Yes | PDF (max 10 MB) |
-| `document_type` | string | Yes | `ine`, `csf`, `comprobante_domicilio`, `estado_cuenta`, `licencia_profesional` |
+| `document_type` | string | Yes | `ine`, `csf`, `comprobante_domicilio` |
 | `fields` | list | No | Fields to extract (uses defaults per type if omitted) |
-| `extractor` | string | No | `regex` (default) or `ai` |
+| `extractor` | string | No | `regex` or `ai`. Default: `ai` for `ine` and `comprobante_domicilio` (AI only: `regex` returns 422); `DEFAULT_EXTRACTOR` (`regex`) for `csf` |
 | `provider` | string | No | `gemini` or `groq` (only with `extractor=ai`) |
 | `force_ocr` | bool | No | Force OCR even when PDF has embedded text |
 | `from_page` / `to_page` | int | No | Page range (1-indexed) |
 | `all_fields` | bool | No | Extract all detectable fields (AI) |
 | `include_raw_text` | bool | No | Include raw text in response (default: `true`) |
-| `debug_mode` | bool | No | Save OCR images to `storage/debug` |
+| `debug_mode` | bool | No | Save to `storage/debug/{request_id}/` the original file, the requested pages as images, what the extractor received (text and, for Gemini, the PDF of the range) and the result. Works for any document, with or without OCR |
 
 #### CSF example (regex)
 
@@ -344,6 +346,41 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
     },
     "text": null
   }
+}
+```
+
+#### Address proof example (ai)
+
+AI only (`extractor` omitted: it is the default for `ine` and `comprobante_domicilio`). Works for electricity, water, gas, phone or internet bills, digital or scanned. Dates come back as ISO (`YYYY-MM-DD`); the app converts them from the printed format (`14 OCT 26`, `05/10/2026`, always day first).
+
+```bash
+curl -X POST http://document-intelligence.test/api/v1/documents/process \
+  -F "file=@samples/pdf/comprobante_luz_sample.pdf" \
+  -F "document_type=comprobante_domicilio" \
+  -F "provider=groq" \
+  -F "include_raw_text=false"
+```
+
+**Response (partial, fictitious sample):**
+
+```json
+"extractedFields": {
+  "nombreTitular": "XAVIER EJEMPLO PRUEBA",
+  "domicilioCompleto": "AV DE LOS EJEMPLOS 123 INT 4, COL. CENTRO, CUAUHTEMOC, CIUDAD DE MEXICO, C.P. 06000",
+  "calle": "AV DE LOS EJEMPLOS",
+  "numeroExterior": "123",
+  "numeroInterior": "4",
+  "colonia": "CENTRO",
+  "municipio": "CUAUHTEMOC",
+  "estado": "CIUDAD DE MEXICO",
+  "codigoPostal": "06000",
+  "proveedor": "ENERGIA DEL VALLE S.A. DE C.V.",
+  "tipoServicio": "luz",
+  "numeroServicio": "000123456789",
+  "fechaEmision": "2026-10-14",
+  "periodoInicio": "2026-08-12",
+  "periodoFin": "2026-10-13",
+  "fechaLimitePago": "2026-10-28"
 }
 ```
 

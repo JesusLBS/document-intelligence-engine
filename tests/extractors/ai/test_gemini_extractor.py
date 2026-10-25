@@ -61,15 +61,21 @@ class TestGeminiRequest:
         assert "thinkingConfig" not in config
         assert config["responseMimeType"] == "application/json"
 
-    def test_images_are_sent_inline(self, fake_post, tmp_path):
-        image = tmp_path / "page_1.png"
-        image.write_bytes(b"\x89PNG fake")
+    def test_document_file_is_sent_inline_with_its_mime_type(self, fake_post, tmp_path):
+        import base64
+
+        document = tmp_path / "pages.pdf"
+        document.write_bytes(b"%PDF-1.7 fake")
         fake_post.response = FakeResponse(200, gemini_body({"text": "{}"}))
 
-        extract(image_paths=[str(image)])
+        extract(document_file=str(document), document_mime_type="application/pdf")
 
         parts = fake_post.calls[0]["json"]["contents"][0]["parts"]
-        assert parts[1]["inline_data"]["mime_type"] == "image/png"
+        assert parts[1]["inline_data"]["mime_type"] == "application/pdf"
+        assert base64.b64decode(parts[1]["inline_data"]["data"]) == b"%PDF-1.7 fake"
+
+    def test_gemini_reads_document_files(self):
+        assert GeminiExtractor.accepts_document_file is True
 
     def test_missing_api_key_fails_before_calling(self, fake_post, monkeypatch):
         monkeypatch.setattr(Config, "GEMINI_API_KEY", "")
@@ -80,7 +86,7 @@ class TestGeminiRequest:
         assert error.value.status_code == 503
         assert fake_post.calls == []
 
-    def test_no_text_and_no_images_skips_the_call(self, fake_post):
+    def test_no_text_and_no_document_skips_the_call(self, fake_post):
         assert extract(text="   ") == {}
         assert fake_post.calls == []
 
@@ -115,16 +121,43 @@ class TestGeminiResponse:
         assert error.value.status_code == 502
         assert "HTTP 404" in error.value.message
 
-    @pytest.mark.parametrize("status", [429, 503])
-    def test_overloaded_provider_becomes_503(self, fake_post, status):
+    def test_overloaded_provider_becomes_503(self, fake_post):
         # Real case: gemini-3.6-flash answered 503 "experiencing high demand".
-        fake_post.response = FakeResponse(status, {"error": {"message": "high demand"}}, text="high demand")
+        fake_post.response = FakeResponse(503, {"error": {"message": "high demand"}}, text="high demand")
 
         with pytest.raises(AiProviderException) as error:
             extract()
 
         assert error.value.status_code == 503
-        assert "try again later" in error.value.message
+        assert "temporarily unavailable" in error.value.message
+
+    def test_exhausted_quota_says_which_limit_and_when(self, fake_post):
+        # Real case (2026-10-25): free tier allows 20 requests per day per model on gemini-3.6-flash.
+        body = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "You exceeded your current quota...",
+                          "details": [
+                              {"@type": "type.googleapis.com/google.rpc.QuotaFailure", "violations": [{
+                                  "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier", "quotaValue": "20"}]},
+                              {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "31927s"},
+                          ]}}
+        fake_post.response = FakeResponse(429, body)
+
+        with pytest.raises(AiProviderException) as error:
+            extract()
+
+        assert error.value.status_code == 503
+        assert error.value.message == (
+            "AI provider 'gemini' failed: exceeded its quota "
+            "(GenerateRequestsPerDayPerProjectPerModel-FreeTier, limit 20); retry in ~8.9 h "
+            "(free tier: use the other provider or a paid plan for more requests)"
+        )
+
+    def test_429_without_details_still_reports_quota(self, fake_post):
+        fake_post.response = FakeResponse(429, {"error": {"message": "slow down"}})
+
+        with pytest.raises(AiProviderException) as error:
+            extract()
+
+        assert "exceeded its quota or rate limit (HTTP 429); try again later" in error.value.message
 
     @pytest.mark.parametrize("status", [401, 403])
     def test_rejected_key_becomes_503(self, fake_post, status):

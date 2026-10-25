@@ -23,6 +23,26 @@ class AiExtractor(BaseExtractor):
         self._provider = provider or Config.AI_PROVIDER
         self._client = self._resolve_provider(self._provider)
 
+    @property
+    def provider(self) -> str:
+        """
+        Name of the resolved AI provider.
+
+        Returns:
+            str: Provider name (e.g. 'gemini').
+        """
+        return self._provider
+
+    @property
+    def accepts_document_file(self) -> bool:
+        """
+        Whether the resolved provider reads the document file (Gemini) or only text (Groq).
+
+        Returns:
+            bool: The provider's capability.
+        """
+        return self._client.accepts_document_file
+
     def _resolve_provider(self, provider: str) -> BaseAiExtractor:
         """
         Resolve AI provider instance.
@@ -61,7 +81,7 @@ class AiExtractor(BaseExtractor):
             text (str): Raw text from document.
             requested_fields (list[str]): Fields to extract.
             context (ExtractionContext, optional): Document type, OCR diagnosis, all_fields flag
-                and page images for multimodal providers.
+                and, for providers that read documents, the file with the requested pages.
 
         Returns:
             dict: Extracted fields in snake_case.
@@ -79,6 +99,7 @@ class AiExtractor(BaseExtractor):
             document_type=context.document_type,
             diagnosis=context.diagnosis,
             all_fields=context.all_fields,
-            image_paths=context.image_paths,
+            document_file=context.document_file,
+            document_mime_type=context.document_mime_type,
             name_hints=name_hints,
         )

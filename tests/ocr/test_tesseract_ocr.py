@@ -58,43 +58,14 @@ class TestPsmFallback:
         assert (text, psm) == ("short", PRIMARY_PSM)
 
 
-class TestDebugFolderPruning:
-    """debug_mode keeps the most recent folders instead of wiping other requests' output."""
+class TestExtractText:
+    """OCR works on the pages the processor already rendered (one text block per page)."""
 
-    def test_keeps_recent_folders_and_the_current_one(self, tmp_path, monkeypatch):
-        import os
-        monkeypatch.setattr(tesseract_ocr, "DEBUG_FOLDER", str(tmp_path))
+    def test_each_page_is_recognized_in_order(self, fake_tesseract, page):
+        outputs, calls = fake_tesseract
+        outputs[PRIMARY_PSM] = "x" * MIN_PAGE_CHARS
 
-        for i in range(15):
-            folder = tmp_path / f"old-{i:02d}"
-            folder.mkdir()
-            os.utime(folder, (1_000_000 + i, 1_000_000 + i))
-        current = tmp_path / "current-request"
-        current.mkdir()
-        os.utime(current, (1, 1))  # oldest on disk, but it belongs to the running request
+        text = TesseractOcr().extract_text([page, page])
 
-        TesseractOcr()._prune_debug_folders(keep="current-request")
-
-        remaining = sorted(p.name for p in tmp_path.iterdir())
-        assert "current-request" in remaining
-        assert len(remaining) == tesseract_ocr.DEBUG_KEEP
-        assert "old-14" in remaining and "old-00" not in remaining
-
-
-class TestCropToContent:
-    """Pages are cropped to their content and keep their colors (no grayscale)."""
-
-    def test_card_on_white_page_is_cropped_in_color(self):
-        page = Image.new("RGB", (1000, 1200), color=(255, 255, 255))
-        page.paste((30, 90, 160), (200, 300, 500, 450))  # a colored "card"
-
-        cropped = TesseractOcr()._crop_to_content(page)
-
-        padding = tesseract_ocr.CROP_PADDING
-        assert cropped.size == (300 + 2 * padding, 150 + 2 * padding)
-        assert cropped.mode == "RGB"
-
-    def test_blank_page_is_returned_untouched(self):
-        page = Image.new("RGB", (400, 400), color=(255, 255, 255))
-
-        assert TesseractOcr()._crop_to_content(page) is page
+        assert text == "\n".join(["x" * MIN_PAGE_CHARS] * 2)
+        assert calls == [PRIMARY_PSM, PRIMARY_PSM]

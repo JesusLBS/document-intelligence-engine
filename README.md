@@ -18,7 +18,7 @@ Casos de uso actuales:
 
 - **CSF** (Constancia de Situación Fiscal): extracción regex de RFC, CURP, nombre, régimen fiscal, etc.
 - **INE**: extracción vía IA con hints de CURP y soporte multimodal (Gemini).
-- Otros tipos registrados (`comprobante_domicilio`, `estado_cuenta`, `licencia_profesional`) funcionan con `extractor=ai` o devuelven campos vacíos con regex.
+- **Comprobante de domicilio** (luz, agua, gas, teléfono, internet): extracción vía IA de titular, domicilio desglosado, proveedor, número de servicio y fechas normalizadas a ISO.
 
 ---
 
@@ -69,11 +69,11 @@ DocumentProcessorFactory → PdfProcessor
   ↓
 Diagnosis (OCR required?)
   ├── NO  → Embedded text extraction
-  └── YES → TesseractOcr (recorte al contenido → texto + temp images)
+  └── YES → TesseractOcr (páginas del rango recortadas al contenido → texto)
   ↓
 ExtractorFactory
   ├── CsfExtractor (regex)
-  ├── AiExtractor → Gemini / Groq
+  ├── AiExtractor → Gemini (PDF de las páginas del rango + texto) / Groq (solo texto)
   └── PassthroughExtractor (fallback regex)
   ↓
 JSON Response (camelCase fields)
@@ -113,9 +113,9 @@ document-intelligence-engine/
 │   └── README.en.md         # Este README en inglés
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
-├── scripts/                 # up, verify, smoke, doctor (los llama el Makefile)
-├── samples/                 # Documentos de muestra con datos ficticios
-├── storage/                 # debug/, logs/, temp_images/ (generados en runtime, ignorados por git)
+├── scripts/                 # up, verify, smoke, doctor (los llama el Makefile) y generate_samples.py
+├── samples/                 # Muestras: INE pública y comprobantes ficticios (scripts/generate_samples.py)
+├── storage/                 # debug/, logs/ (generados en runtime, ignorados por git)
 ├── uploads/                 # Uploads temporales (ignorados por git)
 ├── .github/workflows/       # CI (pytest)
 ├── .githooks/               # pre-push que bloquea push directo a main/develop
@@ -142,6 +142,8 @@ document-intelligence-engine/
 - `make` (viene con macOS/Linux)
 - Entrada en `/etc/hosts`: `127.0.0.1 document-intelligence.test` (dominio local que atiende nginx)
 - Claves de API solo si usas `extractor=ai`: `GEMINI_API_KEY` y/o `GROQ_API_KEY`
+
+> **Cuentas gratuitas de IA.** Las dos claves pueden ser del plan gratuito, que tiene límites de peticiones (Gemini, en octubre de 2026: **20 peticiones por día por modelo** en `gemini-3.6-flash`). Al pasarlo, la API responde 503 con `exceeded its quota (<cuota>, limit N); retry in …`. El tiempo de espera lo estima el proveedor y no es exacto (Google dijo ~9 h y aceptó una petición 83 s después). Mientras tanto, usa el otro proveedor (`provider=groq` / `provider=gemini`) o pasa la cuenta a un plan de pago. Límites vigentes: [Gemini](https://ai.google.dev/gemini-api/docs/rate-limits) · [Groq](https://console.groq.com/docs/rate-limits).
 
 `make doctor` revisa todo esto (solo lee, no instala nada).
 
@@ -191,7 +193,7 @@ API en **http://document-intelligence.test** (nginx en el puerto 80 → Flask en
 | Cada petición tarda ~5 s | `/etc/resolver/test` manda los `.test` al DNS de Laravel Herd y Herd está apagado: macOS espera 5 s antes de usar `/etc/hosts`. Arranca Herd o revisa ese archivo. `make doctor` lo detecta (línea `dns`) |
 | `env file .env not found` | Falta `cp .env.example .env` |
 | Cambié `requirements.txt` y no se refleja | `make build` |
-| `extractor=ai` responde 503 | Falta la clave del proveedor (`GEMINI_API_KEY` / `GROQ_API_KEY`) en `.env`; agrégala y `make up` (recrea el contenedor; `make restart` no recarga `.env`) |
+| `extractor=ai` responde 503 | Lee el mensaje: **"is not configured"** → falta la clave (`GEMINI_API_KEY` / `GROQ_API_KEY`) en `.env`; agrégala y `make up` (`make restart` no recarga `.env`). **"exceeded its quota (…)"** → se agotó la cuota del proveedor: dice cuál y cuándo se reinicia (el plan gratuito de Gemini permite 20 peticiones por día por modelo); espera o usa el otro proveedor. **"temporarily unavailable"** → el proveedor está saturado; reintenta en unos segundos |
 | `extractor=ai` responde 502 o 504 | El proveedor falló: el mensaje dice por qué (HTTP, respuesta bloqueada o truncada, timeout). Un `HTTP 404` suele ser un modelo apagado: revisa `GEMINI_MODEL` / `GROQ_MODEL` contra las páginas de deprecaciones |
 
 ### Opcional: Python local (sin Docker)
@@ -263,15 +265,15 @@ Procesa un documento PDF y extrae campos según tipo y estrategia.
 | Parámetro | Tipo | Requerido | Descripción |
 |-----------|------|-----------|-------------|
 | `file` | file | Sí | PDF (máx. 10 MB) |
-| `document_type` | string | Sí | `ine`, `csf`, `comprobante_domicilio`, `estado_cuenta`, `licencia_profesional` |
+| `document_type` | string | Sí | `ine`, `csf`, `comprobante_domicilio` |
 | `fields` | list | No | Campos a extraer (usa defaults por tipo si se omite) |
-| `extractor` | string | No | `regex` (default) o `ai` |
+| `extractor` | string | No | `regex` o `ai`. Default: `ai` para `ine` y `comprobante_domicilio` (solo IA: `regex` responde 422); `DEFAULT_EXTRACTOR` (`regex`) para `csf` |
 | `provider` | string | No | `gemini` o `groq` (solo con `extractor=ai`) |
 | `force_ocr` | bool | No | Forzar OCR aunque el PDF tenga texto embebido |
 | `from_page` / `to_page` | int | No | Rango de páginas (1-indexed) |
 | `all_fields` | bool | No | Extraer todos los campos detectables (IA) |
 | `include_raw_text` | bool | No | Incluir texto crudo en respuesta (default: `true`) |
-| `debug_mode` | bool | No | Guardar imágenes OCR en `storage/debug` |
+| `debug_mode` | bool | No | Guardar en `storage/debug/{request_id}/` el archivo original, las páginas del rango como imagen, lo que recibió el extractor (texto y, para Gemini, el PDF del rango) y el resultado. Funciona con cualquier documento, con o sin OCR |
 
 #### Ejemplo CSF (regex)
 
@@ -344,6 +346,41 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
     },
     "text": null
   }
+}
+```
+
+#### Ejemplo comprobante de domicilio (ai)
+
+Solo con IA (`extractor` se omite: es el default para `ine` y `comprobante_domicilio`). Sirve para recibos de luz, agua, gas, teléfono o internet, digitales o escaneados. Las fechas se devuelven en ISO (`YYYY-MM-DD`); la app las convierte desde el formato impreso (`14 OCT 26`, `05/10/2026`, siempre día primero).
+
+```bash
+curl -X POST http://document-intelligence.test/api/v1/documents/process \
+  -F "file=@samples/pdf/comprobante_luz_sample.pdf" \
+  -F "document_type=comprobante_domicilio" \
+  -F "provider=groq" \
+  -F "include_raw_text=false"
+```
+
+**Response (parcial, muestra ficticia):**
+
+```json
+"extractedFields": {
+  "nombreTitular": "XAVIER EJEMPLO PRUEBA",
+  "domicilioCompleto": "AV DE LOS EJEMPLOS 123 INT 4, COL. CENTRO, CUAUHTEMOC, CIUDAD DE MEXICO, C.P. 06000",
+  "calle": "AV DE LOS EJEMPLOS",
+  "numeroExterior": "123",
+  "numeroInterior": "4",
+  "colonia": "CENTRO",
+  "municipio": "CUAUHTEMOC",
+  "estado": "CIUDAD DE MEXICO",
+  "codigoPostal": "06000",
+  "proveedor": "ENERGIA DEL VALLE S.A. DE C.V.",
+  "tipoServicio": "luz",
+  "numeroServicio": "000123456789",
+  "fechaEmision": "2026-10-14",
+  "periodoInicio": "2026-08-12",
+  "periodoFin": "2026-10-13",
+  "fechaLimitePago": "2026-10-28"
 }
 ```
 

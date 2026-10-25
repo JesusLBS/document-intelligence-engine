@@ -24,16 +24,13 @@ The project starts as an API-first application and will be containerized using D
 
 Transform unstructured documents into structured and validated information.
 
-Examples:
+Supported document types (the project scope):
 
-* INE
-* Tax documents
-* Proof of address
-* Bank statements
-* Professional licenses
-* Certifications
-* Contracts
-* Future document types
+* INE (voter ID)
+* CSF (tax status certificate)
+* Proof of address (comprobante de domicilio: electricity, water, gas, phone, internet bills)
+
+Bank statements and professional licenses were early examples of what the platform could validate, not planned work: they were dropped from the scope (2026-10-25). The architecture still allows new types (see AGENTS.md → Extender el pipeline).
 
 The system should be able to:
 
@@ -290,15 +287,11 @@ Selected Processor (PdfProcessor)
     ↓
 Diagnosis (OCR required?)
     ├── NO  → Embedded text extraction
-    └── YES → TesseractOcr
-              ↓
-              Crop to content, color (Pillow) → temp images (storage/temp_images)
-              ↓
-              OCR text + image_paths
+    └── YES → render requested pages (400 DPI, cropped to content, color) → TesseractOcr → OCR text
     ↓
 ExtractorFactory
     ├── CsfExtractor (regex)
-    ├── AiExtractor → Gemini (multimodal: image_paths + text)
+    ├── AiExtractor → Gemini (PDF of the requested pages, inline base64 + text)
     │              → Groq (text-only)
     └── PassthroughExtractor (regex fallback)
     ↓
@@ -458,7 +451,7 @@ Responsibilities:
 
 # Image Processing
 
-Current preprocessing before OCR: **crop to the content area, in color** (Pillow, `TesseractOcr._crop_to_content`). No grayscale, no binarization: Tesseract binarizes internally.
+Current preprocessing before OCR: **crop to the content area, in color** (Pillow, `page_renderer.crop_to_content`). No grayscale, no binarization: Tesseract binarizes internally.
 
 Decision history: a full OpenCV pipeline (denoise, CLAHE contrast, Otsu binarization, rotation correction) was implemented in commit `a34af13` and replaced by plain grayscale in `3182f91` (the commit that introduced `AiExtractor`); multimodal Gemini extraction, which receives the original page image, came later in `26eb3f0`. The reason for dropping the pipeline was not recorded at the time; `opencv-python`/`numpy` were later removed from `requirements.txt` because nothing imported them.
 
@@ -483,11 +476,12 @@ Current implementation: `TesseractOcr` (`app/ocr/tesseract_ocr.py`)
 
 Pipeline:
 
-1. Convert PDF pages to images via `pdf2image` (400 DPI, poppler)
+1. The processor renders the requested pages (`render_pages` → `app/processors/pdf/page_renderer.py`): `pdf2image` at 400 DPI (poppler)
 2. Crop each page to its content area, keeping color (Pillow); see Image Processing for the measurement
 3. Run Tesseract via `pytesseract` (Spanish language pack, hardcoded `spa`) with `--psm 3` (automatic layout); if a page yields fewer than 30 characters, retry with `--psm 11` (sparse text) and keep the longer result. Reason: PSM 3 returned 0 characters on a photographed INE placed on a page, PSM 11 returned 337 (measured 2026-10-17 on `samples/pdf/ine_sample.pdf`)
-4. Save the same cropped color images to `storage/temp_images/{request_id}/` for multimodal AI (Gemini): more document detail and a smaller upload than the whole page
-5. Always delete temp images after processing. With `debug_mode=true`, the cropped images are **additionally** saved to `storage/debug/{request_id}/`; the 10 most recent debug folders are kept
+4. Rendered pages are independent of OCR: `debug_mode=true` also renders them for digital PDFs, and `DebugStore` saves them with the upload, what each extractor received and the result in `storage/debug/{request_id}/` (last 10 kept)
+
+Gemini does not get these crops: it gets the PDF of the requested pages (`export_pages`) and reads its text layer and page images natively (up to 50 MB inline, ~258 tokens per page). Until 2026-10-25 it only got images when OCR ran, so a digital bill reached it as out-of-order embedded text and it returned one field. Measured after the change on the INE sample: 7/7 fields, identical on 3 runs (the crop is no longer needed for Gemini).
 
 Future option:
 
@@ -522,9 +516,13 @@ Regex approach (initial):
 
 * Pattern matching for structured fields: RFC, CURP, names, dates, tax regimes
 
-Planned regex extractors:
+Regex is only planned where the layout is fixed (CSF). INE (photographed cards) and proof of address (one bill format per provider) are AI-only (`Config.AI_ONLY_DOCUMENT_TYPES`): they default to `extractor=ai` and `extractor=regex` is rejected with 422.
 
-* INE, comprobante de domicilio, estado de cuenta, licencia profesional
+AI output is made uniform across providers by the app, not by the prompt alone:
+
+* `Config.DOCUMENT_FIELD_DESCRIPTIONS` — meaning and format of each field, added to the shared prompt.
+* Dates are requested exactly as printed and converted to ISO by `app/utils/date_normalizer.py` (day first). Asked for ISO directly, Groq read `05/10/2026` month first (`2026-05-10`), an error the app cannot detect afterwards.
+* `app/utils/id_normalizer.py` — OCR look-alike fixes in CURP and clave de elector.
 
 ---
 
@@ -557,7 +555,7 @@ Current flow:
 ```text
 PDF
  ↓
-OCR (when required) → text + image_paths
+OCR (when required) → text; PDF of the requested pages for providers that read documents
  ↓
 AiExtractor (BaseExtractor)
  ↓
@@ -666,8 +664,8 @@ Scope of each phase. Which phase is done, in progress or next: [`STATUS.md`](./S
 * CSF regex extractor with unit tests
 * AI extraction (Gemini multimodal, Groq text-only)
 * CURP decoder hints for INE
-* Regex extractors for INE, comprobante de domicilio, etc.
-* Default fields for all registered document types
+* Proof of address via AI: default fields, field descriptions in the prompt, ISO date normalization
+* Default fields for all registered document types (INE, CSF, proof of address)
 
 ## Phase 3 — File Processors
 

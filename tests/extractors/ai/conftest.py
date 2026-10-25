@@ -7,10 +7,11 @@ from app.extractors.ai import base_ai_extractor
 class FakeResponse:
     """Minimal stand-in for requests.Response."""
 
-    def __init__(self, status_code: int = 200, body=None, text: str = ""):
+    def __init__(self, status_code: int = 200, body=None, text: str = "", headers: dict = None):
         self.status_code = status_code
         self._body = body
         self.text = text or ""
+        self.headers = headers or {}
 
     def json(self):
         if self._body is None:

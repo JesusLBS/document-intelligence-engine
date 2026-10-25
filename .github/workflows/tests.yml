@@ -23,7 +23,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Current tests are pure Python: no Tesseract, poppler or API keys needed.
+      # Tests are pure Python: no Tesseract, poppler or API keys needed (pdf2image/pytesseract are
+      # stubbed where used). `make verify` hides both from PATH to catch a test that needs them.
       # When a test needs real OCR, install tesseract-ocr/tesseract-ocr-spa/poppler-utils here.
       - name: Run tests
         run: pytest tests/ -v

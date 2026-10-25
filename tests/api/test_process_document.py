@@ -50,6 +50,23 @@ class TestRequestValidation:
         assert response.status_code == 422
         assert "extractor" in response.get_json()["errors"]
 
+    @pytest.mark.parametrize("document_type", ["ine", "comprobante_domicilio"])
+    def test_regex_on_ai_only_type_returns_422(self, client, make_pdf, upload, document_type):
+        response = client.post(ENDPOINT, data={
+            "file": upload(make_pdf()),
+            "document_type": document_type,
+            "extractor": "regex",
+        })
+
+        assert response.status_code == 422
+        assert "only supports extractor 'ai'" in response.get_json()["errors"]["extractor"][0]
+
+    @pytest.mark.parametrize("document_type", ["estado_cuenta", "licencia_profesional"])
+    def test_dropped_document_types_return_422(self, client, make_pdf, upload, document_type):
+        response = client.post(ENDPOINT, data={"file": upload(make_pdf()), "document_type": document_type})
+
+        assert response.status_code == 422
+
     def test_unknown_document_type_returns_422(self, client, make_pdf, upload):
         response = client.post(ENDPOINT, data={"file": upload(make_pdf()), "document_type": "passport"})
 
@@ -110,6 +127,12 @@ class TestControllerUsesValidatedData:
         assert call["provider"] is None
         assert call["requested_fields"] == []
         assert call["from_page"] is None
+
+    @pytest.mark.parametrize("document_type", ["ine", "comprobante_domicilio"])
+    def test_ai_only_types_default_to_ai(self, client, make_pdf, upload, fake_service, document_type):
+        client.post(ENDPOINT, data={"file": upload(make_pdf()), "document_type": document_type})
+
+        assert fake_service.calls[0]["extractor_strategy"] == "ai"
 
 
 class TestProcessPipeline:

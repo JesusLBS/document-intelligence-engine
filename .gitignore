@@ -42,8 +42,6 @@ storage/debug/*
 storage/logs/*
 !storage/logs/.gitkeep
 
-storage/temp_images/*
-!storage/temp_images/.gitkeep
 
 # macOS specific files
 .DS_Store
