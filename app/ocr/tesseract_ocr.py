@@ -16,9 +16,20 @@ DEBUG_FOLDER = "storage/debug"
 DEBUG_KEEP = 10
 TEMP_IMAGE_FOLDER = "storage/temp_images"
 
-# Page segmentation modes. PSM 3 (automatic layout) suits full-page documents but returns
-# nothing on a photographed ID card placed on a page; PSM 11 (sparse text) recovers it.
-# Measured on samples/pdf/ine_sample.pdf at 300 DPI: PSM 3 -> 0 chars, PSM 11 -> 337 chars.
+# Rendering and preprocessing, measured on samples/pdf/ine_sample.pdf (a color INE photo on a
+# white letter page), scoring OCR text by card labels and ID patterns found, and by how many
+# fields a text-only AI extracted from it (2026-10-25):
+#   - full page, grayscale (old pipeline): 0-3 of 14 points; text-only AI got 0/7 fields
+#   - cropped to the content area: 9-10 points; text-only AI got 5-6/7 fields matching Gemini
+#   - grayscale vs color made no real difference (color slightly better); Tesseract binarizes itself
+#   - 400 DPI beat 300 DPI (only variant reading the clave de elector) for +0.4 s per page
+OCR_DPI = 400
+# Pixels darker than this count as content when looking for the area to crop.
+CONTENT_THRESHOLD = 235
+CROP_PADDING = 20
+
+# Page segmentation modes: PSM 3 (automatic layout) first; PSM 11 (sparse text) as fallback
+# when a page yields (almost) nothing.
 PRIMARY_PSM = 3
 FALLBACK_PSM = 11
 MIN_PAGE_CHARS = 30
@@ -54,7 +65,7 @@ class TesseractOcr(BaseOcr):
             file_path,
             first_page=from_page,
             last_page=to_page,
-            dpi=300,
+            dpi=OCR_DPI,
         )
 
         if debug_mode and request_id:
@@ -65,13 +76,14 @@ class TesseractOcr(BaseOcr):
         temp_id = request_id or str(uuid.uuid4())
 
         for i, image in enumerate(images):
-            processed = self._preprocess(image)
+            processed = self._crop_to_content(image)
 
             if debug_mode and request_id:
                 self._persist_page(processed, request_id, i + 1)
 
-            # Always save a temp copy so it can be sent to multimodal AI providers
-            temp_path = self._persist_temp_page(image, temp_id, i + 1)
+            # Multimodal AI providers get the same cropped color image: more detail on the
+            # document and a smaller upload than the whole page.
+            temp_path = self._persist_temp_page(processed, temp_id, i + 1)
             image_paths.append(temp_path)
 
             text, psm = self._recognize(processed)
@@ -89,7 +101,7 @@ class TesseractOcr(BaseOcr):
         when the page yields (almost) no text.
 
         Args:
-            image (Image.Image): Preprocessed page image.
+            image (Image.Image): Cropped page image.
 
         Returns:
             tuple[str, int]: Recognized text and the PSM that produced it.
@@ -104,17 +116,32 @@ class TesseractOcr(BaseOcr):
 
         return text, PRIMARY_PSM
 
-    def _preprocess(self, image: Image.Image) -> Image.Image:
+    def _crop_to_content(self, image: Image.Image) -> Image.Image:
         """
-        Preprocess image to improve OCR accuracy.
+        Crop the page to the area that actually has content, keeping the original colors.
+
+        A photographed ID card on a mostly white page defeats Tesseract's layout analysis;
+        cropping to the card fixes it. On full-page documents the crop only trims margins.
+        No grayscale conversion: measured, it did not help (see OCR_DPI notes).
 
         Args:
-            image (Image.Image): Raw page image.
+            image (Image.Image): Rendered page.
 
         Returns:
-            Image.Image: Preprocessed grayscale image.
+            Image.Image: Cropped page (the original image if the page is blank).
         """
-        return image.convert("L")
+        mask = image.convert("L").point(lambda pixel: 255 if pixel < CONTENT_THRESHOLD else 0)
+        box = mask.getbbox()
+        if not box:
+            return image
+
+        left, top, right, bottom = box
+        return image.crop((
+            max(left - CROP_PADDING, 0),
+            max(top - CROP_PADDING, 0),
+            min(right + CROP_PADDING, image.width),
+            min(bottom + CROP_PADDING, image.height),
+        ))
 
     def _persist_page(self, image: Image.Image, request_id: str, page_number: int) -> None:
         """

@@ -79,3 +79,22 @@ class TestDebugFolderPruning:
         assert "current-request" in remaining
         assert len(remaining) == tesseract_ocr.DEBUG_KEEP
         assert "old-14" in remaining and "old-00" not in remaining
+
+
+class TestCropToContent:
+    """Pages are cropped to their content and keep their colors (no grayscale)."""
+
+    def test_card_on_white_page_is_cropped_in_color(self):
+        page = Image.new("RGB", (1000, 1200), color=(255, 255, 255))
+        page.paste((30, 90, 160), (200, 300, 500, 450))  # a colored "card"
+
+        cropped = TesseractOcr()._crop_to_content(page)
+
+        padding = tesseract_ocr.CROP_PADDING
+        assert cropped.size == (300 + 2 * padding, 150 + 2 * padding)
+        assert cropped.mode == "RGB"
+
+    def test_blank_page_is_returned_untouched(self):
+        page = Image.new("RGB", (400, 400), color=(255, 255, 255))
+
+        assert TesseractOcr()._crop_to_content(page) is page

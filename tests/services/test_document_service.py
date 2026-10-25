@@ -68,3 +68,24 @@ class TestUniformExtractorCall:
         assert context.diagnosis["reason"] == "embedded_text_found"
         assert context.image_paths == []
         assert result["extractedFields"] == {"someField": "value"}
+
+
+class TestIdentifierNormalization:
+    """Extracted CURP / clave de elector are corrected whatever extractor produced them."""
+
+    def test_curp_with_ocr_look_alikes_is_fixed(self, make_pdf, monkeypatch):
+        from app.services import document_service
+
+        class OcrConfusedExtractor:
+            def extract(self, text, requested_fields, context=None):
+                return {"curp": "XAXXO1O1O1HDFAAA09"}
+
+        monkeypatch.setattr(document_service.ExtractorFactory, "make", staticmethod(lambda *a, **k: OcrConfusedExtractor()))
+
+        result = DocumentService().process(
+            file=FileStorage(stream=io.BytesIO(make_pdf("Embedded text " * 20)), filename="doc.pdf"),
+            document_type="ine",
+            requested_fields=["curp"],
+        )
+
+        assert result["extractedFields"]["curp"] == "XAXX010101HDFAAA09"

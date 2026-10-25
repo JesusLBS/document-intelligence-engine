@@ -10,7 +10,8 @@ Code audit fixes (audit of 2026-10-17, list below), in three branches off `devel
 
 1. `fix/api-correctness` — done (PR #2): issues 1–5.
 2. `fix/ai-providers-and-ocr` — done (PR #3): issues 6–9, 12, 14, 18.
-3. `chore/hardening-cleanup` — **in progress**: issues 10, 11, 13, 15–17. With it, all 18 audit items are closed.
+3. `chore/hardening-cleanup` — done (PR #4): issues 10, 11, 13, 15–17.
+4. `fix/ocr-quality-and-regressions` — **in progress**: regression check against the pre-session code, OCR quality on photographed IDs (issues 7 and 19), `.env` reload docs (issue 20).
 
 Done before (merged in PR #1): single AI context (`AGENTS.md`), docs aligned with the code, status centralized here, protected-branch convention, CI with pytest, Docker-first dev environment (`Makefile` + `scripts/`, healthcheck, `.test` domain checks, `.env` out of the image).
 
@@ -33,9 +34,10 @@ Done before (merged in PR #1): single AI context (`AGENTS.md`), docs aligned wit
 |---|---|
 | `GET /api/v1/health`, `POST /api/v1/documents/process` | Standard `{ok, status, message, data, meta}` envelope; 404/405 and validation errors keep their status |
 | PDF processing (PyMuPDF) | Metadata, page range, multi-signal OCR diagnosis; non-PDF content → 422 |
-| OCR (Tesseract) | Grayscale preprocessing (OpenCV pipeline was removed, see PROJECT_PLAN.md → Image Processing); PSM 3 with PSM 11 fallback for sparse text such as ID cards |
+| OCR (Tesseract) | 400 DPI, cropped to the content area in color (no grayscale), PSM 3 with PSM 11 fallback; CURP / clave de elector look-alike errors corrected by position. Measurement in PROJECT_PLAN.md → Image Processing |
 | CSF with `extractor=regex` | `CsfExtractor`, unit-tested and covered end-to-end with a generated PDF |
-| Any type with `extractor=ai` | Gemini `gemini-3.6-flash` (text + page images) or Groq `openai/gpt-oss-120b` (text only), selectable per request; JSON mode; provider failures → 502/503/504 with a clear message |
+| Any type with `extractor=ai` | Gemini (reads the cropped page image; default `gemini-3.6-flash`) or Groq (OCR text only; default `openai/gpt-oss-120b`), selectable per request; JSON mode; provider failures → 502/503/504 with a clear message |
+| INE (scanned) | Gemini 7/7 fields (same as before this session); Groq 6/7, matching Gemini on 6 (was 0 before the OCR fixes) |
 | `ine`, `comprobante_domicilio`, `estado_cuenta`, `licencia_profesional` with `extractor=regex` | Return empty `extractedFields` (PassthroughExtractor) |
 
 ## Code audit (2026-10-17)
@@ -52,7 +54,7 @@ Each item was verified against the running API, a measurement or official docs. 
 | 4 | `.pdf` file with non-PDF content → 500; document left open if page-range validation raised | fixed — `fix/api-correctness` |
 | 5 | Upload saved as `temp_{pid}`: concurrent requests (threaded dev server) could overwrite each other's file | fixed — `fix/api-correctness` |
 | 6 | Default `GEMINI_MODEL=gemini-2.0-flash` was shut down on 2026-06-01 ([deprecations](https://ai.google.dev/gemini-api/docs/deprecations)); default `GROQ_MODEL=llama-3.3-70b-versatile` was shut down on 2026-08-16 ([deprecations](https://console.groq.com/docs/deprecations)); `thinkingBudget` is legacy on Gemini 3 | fixed — `fix/ai-providers-and-ocr` |
-| 7 | Tesseract default `--psm 3` returns 0 chars on a photographed ID card (`--psm 11`: 337 chars); regex and Groq silently get empty text | fixed — `fix/ai-providers-and-ocr` |
+| 7 | Tesseract default `--psm 3` returned 0 chars on a photographed ID card; regex and Groq silently got empty text | fixed — PSM fallback in `fix/ai-providers-and-ocr`, completed by issue 19 |
 
 ### Robustness and security
 
@@ -74,17 +76,31 @@ Each item was verified against the running API, a measurement or official docs. 
 | 16 | Dead code: `ExtractorNotFoundException`, unused `language` field, unused `matches` in `CsfExtractor`, empty `processors/interfaces/`, duplicated `load_dotenv` | fixed — `chore/hardening-cleanup` |
 | 17 | `debug_mode` wipes other requests' debug folders; `storage/logs/app.log` grows without rotation | fixed — `chore/hardening-cleanup` |
 | 18 | `make smoke` only checks `ok:true`, so it passed while OCR returned 0 chars (issue 7) | fixed — `fix/ai-providers-and-ocr` |
+| 19 | After the PSM fallback the OCR text was still noise (337 chars, 17 words, no card labels): full grayscale page where the card is small; `make smoke` measured length, not quality | fixed — `fix/ocr-quality-and-regressions` (crop to content in color, 400 DPI, ID normalizer, smoke checks card labels) |
+| 20 | Docs said to run `make restart` after editing `.env`; it does not reload `env_file` (verified: old key and model kept), `make up` does | fixed — `fix/ocr-quality-and-regressions` |
+
+### Regression check against the pre-session code (2026-10-25)
+
+Same sample (`samples/pdf/ine_sample.pdf`) and request, original code (commit `8b6e98e`) vs current code:
+
+| Strategy | Original | Current |
+|---|---|---|
+| `extractor=ai`, Gemini (`gemini-2.5-flash`) | 7/7 fields | 7/7 fields — no regression |
+| `extractor=ai`, Groq (`openai/gpt-oss-120b`) | 0 fields (OCR returned nothing; Groq was never called) | 6/7 fields, 6 matching Gemini |
+| `extractor=regex` | 0 fields (no INE regex extractor) | 0 fields (same) |
+
+Groq on embedded text (generated CSF with fictitious data): RFC and CURP exact, `padron_status` and name filled.
 
 ### Live verification of `fix/ai-providers-and-ocr` (2026-10-25)
 
 - OCR on `samples/pdf/ine_sample.pdf`: 0 → 337 chars (PSM 11 fallback); `make smoke` now fails if OCR returns < 50 chars.
 - Gemini: `gemini-2.0-flash` → 404 "no longer available"; `gemini-2.5-flash` + `thinkingLevel` → 400 (hence the gemini-2.x guard); the new payload (`responseMimeType` + `thinkingLevel: low`) → 200 on `gemini-3.6-flash` and `gemini-3.5-flash-lite`; full multimodal extraction → 7/7 fields on `gemini-2.5-flash`.
 - **Not verified yet:** full multimodal extraction on a Gemini 3 model — `gemini-3.6-flash` and `gemini-3.8-flash` answered 503 "high demand" during the test window. Re-run when demand drops.
-- Groq: not verified live — the configured key answered 401. Payload checked against Groq docs and unit tests only.
+- Groq: verified live after the key rotation (see regression check above).
 
 ## Open, non-blocking follow-ups
 
-- Developer's `.env`: `GROQ_MODEL=llama-3.3-70b-versatile` is shut down and the Groq key is rejected (rotate it); consider moving `GEMINI_MODEL` from `gemini-2.5-flash` (legacy, limited access) to `gemini-3.6-flash`.
+- Developer's `.env`: consider moving `GEMINI_MODEL` from `gemini-2.5-flash` (legacy, limited access) to `gemini-3.6-flash` once Gemini 3 demand allows a live check.
 - Retry with backoff on provider 429/503 (Gemini 3 models were saturated during testing) — today the client gets a clear 503 and must retry.
 
 - Enable branch protection on `main` and `develop` in GitHub (manual, developer's own action; requires a public repo or a paid plan for private repos).

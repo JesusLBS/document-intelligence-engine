@@ -292,7 +292,7 @@ Diagnosis (OCR required?)
     ├── NO  → Embedded text extraction
     └── YES → TesseractOcr
               ↓
-              Grayscale preprocess (Pillow) → temp images (storage/temp_images)
+              Crop to content, color (Pillow) → temp images (storage/temp_images)
               ↓
               OCR text + image_paths
     ↓
@@ -427,9 +427,9 @@ Diagnosis (text density, scan detection)
  ├── Sufficient text → Extract embedded text
  └── OCR required (or force_ocr=true)
        ↓
-       Convert pages to images (pdf2image, 300 DPI)
+       Convert pages to images (pdf2image, 400 DPI)
        ↓
-       Grayscale conversion (Pillow)
+       Crop to the content area, keeping color (Pillow)
        ↓
        Tesseract OCR + temp images for AI
        ↓
@@ -458,11 +458,22 @@ Responsibilities:
 
 # Image Processing
 
-Current preprocessing before OCR: **grayscale conversion only** (Pillow, `TesseractOcr._preprocess`).
+Current preprocessing before OCR: **crop to the content area, in color** (Pillow, `TesseractOcr._crop_to_content`). No grayscale, no binarization: Tesseract binarizes internally.
 
 Decision history: a full OpenCV pipeline (denoise, CLAHE contrast, Otsu binarization, rotation correction) was implemented in commit `a34af13` and replaced by plain grayscale in `3182f91` (the commit that introduced `AiExtractor`); multimodal Gemini extraction, which receives the original page image, came later in `26eb3f0`. The reason for dropping the pipeline was not recorded at the time; `opencv-python`/`numpy` were later removed from `requirements.txt` because nothing imported them.
 
-Re-introduce OpenCV only with a before/after measurement on real samples (OCR accuracy for the regex path), not by default.
+Measurement (2026-10-25, `samples/pdf/ine_sample.pdf`: a color INE photo on a white letter page). Each variant was scored by INE labels and ID patterns found in the OCR text (max 14), and by how many fields a text-only AI (Groq) extracted from that text:
+
+| Variant | Score | Groq fields |
+|---|---|---|
+| Full page, grayscale, 300 DPI (previous pipeline) | 0–3 | 0/7 |
+| Full page, color | 0–5 | — |
+| Cropped to content, grayscale, 300 DPI | 9 | 4/7 matching Gemini |
+| **Cropped to content, color, 400 DPI** (chosen) | **10** | 5–6/7 matching Gemini |
+
+Conclusions: grayscale was not the cause (with the full page, color and grayscale were equally bad); the real problem was the small card on a mostly white page defeating Tesseract's layout analysis. Cropping fixed it; color was slightly better than grayscale; 400 DPI cost about +0.4 s per page. The remaining errors were look-alike characters in structured IDs (e.g. `O` read for `0`), now corrected by position in `app/utils/id_normalizer.py`.
+
+Re-introduce OpenCV (deskew, perspective correction for skewed photos) only with the same kind of before/after measurement, not by default.
 
 ---
 
@@ -472,11 +483,11 @@ Current implementation: `TesseractOcr` (`app/ocr/tesseract_ocr.py`)
 
 Pipeline:
 
-1. Convert PDF pages to images via `pdf2image` (300 DPI, poppler)
-2. Convert each page to grayscale (Pillow)
+1. Convert PDF pages to images via `pdf2image` (400 DPI, poppler)
+2. Crop each page to its content area, keeping color (Pillow); see Image Processing for the measurement
 3. Run Tesseract via `pytesseract` (Spanish language pack, hardcoded `spa`) with `--psm 3` (automatic layout); if a page yields fewer than 30 characters, retry with `--psm 11` (sparse text) and keep the longer result. Reason: PSM 3 returned 0 characters on a photographed INE placed on a page, PSM 11 returned 337 (measured 2026-10-17 on `samples/pdf/ine_sample.pdf`)
-4. Save the original (non-grayscale) page images to `storage/temp_images/{request_id}/` for multimodal AI (Gemini)
-5. Always delete temp images after processing. With `debug_mode=true`, the grayscale images are **additionally** saved to `storage/debug/{request_id}/`, and previous debug folders are wiped first
+4. Save the same cropped color images to `storage/temp_images/{request_id}/` for multimodal AI (Gemini): more document detail and a smaller upload than the whole page
+5. Always delete temp images after processing. With `debug_mode=true`, the cropped images are **additionally** saved to `storage/debug/{request_id}/`; the 10 most recent debug folders are kept
 
 Future option:
 
