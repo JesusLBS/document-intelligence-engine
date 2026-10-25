@@ -46,8 +46,8 @@ class DocumentService:
             dict: Processing result with extracted fields in camelCase.
         """
         extension = self._get_extension(file.filename)
-        file_path = self._save(file, extension)
         request_id = str(uuid.uuid4())
+        file_path = self._save(file, extension, request_id)
         strategy = extractor_strategy or Config.DEFAULT_EXTRACTOR
         image_paths = []
 
@@ -113,19 +113,24 @@ class DocumentService:
         """
         return filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
-    def _save(self, file: FileStorage, extension: str) -> str:
+    def _save(self, file: FileStorage, extension: str, request_id: str) -> str:
         """
-        Save uploaded file temporarily to disk.
+        Save uploaded file temporarily to disk under a per-request name.
+
+        The name must be unique per request: the dev server handles requests in
+        threads of the same process, so a per-process name would let concurrent
+        uploads overwrite each other.
 
         Args:
             file (FileStorage): File to save.
             extension (str): File extension used for naming.
+            request_id (str): Unique id of the current request.
 
         Returns:
-            str: Absolute path to the saved file.
+            str: Path to the saved file.
         """
         os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
-        file_path = os.path.join(Config.UPLOAD_FOLDER, f"temp_{os.getpid()}.{extension}")
+        file_path = os.path.join(Config.UPLOAD_FOLDER, f"temp_{request_id}.{extension}")
         file.save(file_path)
         return file_path
 

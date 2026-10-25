@@ -6,9 +6,15 @@ Last updated: 2026-10-17
 
 ## Current phase
 
-Repo housekeeping (branch `chore/ai-context-and-ci`): single AI context (`AGENTS.md`), docs aligned with the code, status centralized here, protected-branch convention, CI with pytest, and a polished local dev environment — Docker as the main environment, `Makefile` + `scripts/` (`make up/down/test/verify/smoke/doctor`), app healthcheck, `/etc/hosts` + port-80 checks for the `document-intelligence.test` local domain, `.env` excluded from the Docker image.
+Code audit fixes (audit of 2026-10-17, list below), in three branches off `develop`, each fix with a test that fails on the old code:
 
-**Next target:** decide between (a) raising test coverage (services, factories, API with mocked OCR/AI) while fixing the open bugs below, or (b) starting Phase 4 — Business Validation. Recommendation: (a) first, so Phase 4 is built on top of a test safety net.
+1. `fix/api-correctness` — **in progress**: issues 1–5.
+2. `fix/ai-providers-and-ocr` — next: issues 6–9, 12, 14, 18.
+3. `chore/hardening-cleanup` — after: issues 10, 11, 13, 15–17.
+
+Done before (merged in PR #1): single AI context (`AGENTS.md`), docs aligned with the code, status centralized here, protected-branch convention, CI with pytest, Docker-first dev environment (`Makefile` + `scripts/`, healthcheck, `.test` domain checks, `.env` out of the image).
+
+**Next target after the audit:** Phase 4 — Business Validation, on top of the test suite built during the fixes.
 
 ## Phase checklist
 
@@ -19,33 +25,62 @@ Repo housekeeping (branch `chore/ai-context-and-ci`): single AI context (`AGENTS
 | 3 — File Processors | not started | `app/processors/{image,excel,csv,word}/` are empty scaffolds |
 | 4 — Business Validation | not started | Defined in PROJECT_PLAN.md only |
 | 5 — AI Providers | partial | Gemini and Groq done; OpenAI, Claude, Azure, AWS not started |
-| 6 — Quality & Observability | in progress | CI added (`.github/workflows/tests.yml`, pytest on PR/push to `main`/`develop`; first run pending on this branch's PR). Tests: only `tests/extractors/test_csf_extractor.py` |
+| 6 — Quality & Observability | in progress | CI active on PRs (`.github/workflows/tests.yml`). Tests: CSF extractor, PdfProcessor, DocumentService uploads, API errors/validation/pipeline (30 tests) |
 
 ## What works today
 
 | Area | Notes |
 |---|---|
-| `GET /api/v1/health`, `POST /api/v1/documents/process` | Standard `{ok, status, message, data, meta}` envelope |
-| PDF processing (PyMuPDF) | Metadata, page range, multi-signal OCR diagnosis |
-| OCR (Tesseract) | Grayscale preprocessing only (OpenCV pipeline was removed, see PROJECT_PLAN.md → Image Processing) |
-| CSF with `extractor=regex` | `CsfExtractor`, unit-tested |
-| Any type with `extractor=ai` | Gemini (text + page images) or Groq (text only), selectable per request |
+| `GET /api/v1/health`, `POST /api/v1/documents/process` | Standard `{ok, status, message, data, meta}` envelope; 404/405 and validation errors keep their status |
+| PDF processing (PyMuPDF) | Metadata, page range, multi-signal OCR diagnosis; non-PDF content → 422 |
+| OCR (Tesseract) | Grayscale preprocessing only (OpenCV pipeline was removed, see PROJECT_PLAN.md → Image Processing). **Returns no text on photographed ID cards — issue 7** |
+| CSF with `extractor=regex` | `CsfExtractor`, unit-tested and covered end-to-end with a generated PDF |
+| Any type with `extractor=ai` | Gemini (text + page images) or Groq (text only), selectable per request. **Default Gemini model is shut down — issue 6** |
 | `ine`, `comprobante_domicilio`, `estado_cuenta`, `licencia_profesional` with `extractor=regex` | Return empty `extractedFields` (PassthroughExtractor) |
 
-## Open bugs (found 2026-10-17, not fixed yet)
+## Code audit (2026-10-17)
 
-1. `DocumentService._save` names the upload `temp_{pid}`: concurrent requests in the same process overwrite each other's file.
-2. `extractor` and `provider` are not validated by the schema: unknown `provider` → `ValueError` → 500 instead of 422; unknown `extractor` silently runs regex.
-3. `DocumentController.process` re-parses the form by hand and ignores `schema.load()` output, so booleans can disagree with what validation accepted (e.g. `include_raw_text=1`).
-4. `ResponseHelper` reads `APP_ENV` from `os.environ` with default `production` (Config defaults to `local`); `meta.request_id` is not the request id used internally/in logs.
-5. To verify: default `GEMINI_MODEL=gemini-2.0-flash` combined with `thinkingConfig` in `GeminiExtractor` — check against current Gemini API docs.
+Each item was verified against the running API, a measurement or official docs. Mark it fixed here (with the branch) when it merges.
+
+### Bugs
+
+| # | Issue | Status |
+|---|---|---|
+| 1 | Unknown route / wrong method returned 500 (the `Exception` handler swallowed Werkzeug `HTTPException`) | fixed — `fix/api-correctness` |
+| 2 | Unknown `provider` → 500 `ValueError`; unknown `extractor` silently ran regex (not validated by the schema) | fixed — `fix/api-correctness` |
+| 3 | Controller re-parsed the form and ignored `schema.load()`: `include_raw_text=1` / `force_ocr=1` read as false, `fields[]` validated but dropped | fixed — `fix/api-correctness` |
+| 4 | `.pdf` file with non-PDF content → 500; document left open if page-range validation raised | fixed — `fix/api-correctness` |
+| 5 | Upload saved as `temp_{pid}`: concurrent requests (threaded dev server) could overwrite each other's file | fixed — `fix/api-correctness` |
+| 6 | Default `GEMINI_MODEL=gemini-2.0-flash` was shut down on 2026-06-01 ([deprecations](https://ai.google.dev/gemini-api/docs/deprecations)); `thinkingConfig` and the Groq model also need checking against current docs | open |
+| 7 | Tesseract default `--psm 3` returns 0 chars on a photographed ID card (`--psm 11`: 337 chars); regex and Groq silently get empty text | open |
+
+### Robustness and security
+
+| # | Issue | Status |
+|---|---|---|
+| 8 | AI provider failures (non-200, blocked response → `KeyError`, empty API key still sent) end as a generic 500 instead of a clear 502/503 | open |
+| 9 | nginx default `proxy_read_timeout` is 60 s; OCR at 300 DPI + up to 60 s of Gemini can exceed it (504) | open |
+| 10 | `MAX_CONTENT_LENGTH` not set: Flask reads the whole upload before the size check | open |
+| 11 | `index.py` hardcodes `debug=True` (ignores `APP_DEBUG`); Werkzeug debugger reachable on port 80 from the LAN | open |
+| 12 | Personal data in logs: failed AI parse logs 200 chars of the AI response (names, CURP); CURP initials logged | open |
+| 13 | `meta.request_id` differs from the internal/log request id; `ResponseHelper` reads `APP_ENV` with a default different from `Config` | open |
+| 14 | AI JSON parsing uses `.strip("```json")` (strips characters, not a prefix); both APIs offer native JSON mode | open |
+
+### Cleanup and design
+
+| # | Issue | Status |
+|---|---|---|
+| 15 | `DocumentService` branches on `isinstance(extractor, AiExtractor)` (extract signatures differ), contradicting the DIP described in PROJECT_PLAN.md | open |
+| 16 | Dead code: `ExtractorNotFoundException`, unused `language` field, unused `matches` in `CsfExtractor`, empty `processors/interfaces/`, duplicated `load_dotenv` | open |
+| 17 | `debug_mode` wipes other requests' debug folders; `storage/logs/app.log` grows without rotation | open |
+| 18 | `make smoke` only checks `ok:true`, so it passed while OCR returned 0 chars (issue 7) | open |
 
 ## Open, non-blocking follow-ups
 
 - Enable branch protection on `main` and `develop` in GitHub (manual, developer's own action; requires a public repo or a paid plan for private repos).
 - Lint/format (ruff) — deferred to avoid a large unrelated diff.
 - The Docker image runs Flask's development server (`python index.py`, debug on). Fine for local use; a production-like setup would need a WSGI server (e.g. gunicorn) and debug off.
-- `language` request field is accepted but unused (Tesseract language is hardcoded to `spa`).
+- `samples/pdf/ine_sample.pdf` is a public internet example of an INE; consider replacing it with a fully synthetic sample for the portfolio.
 
 ## How to keep this file honest
 

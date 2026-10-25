@@ -3,6 +3,7 @@ import fitz  # PyMuPDF
 from datetime import datetime
 
 from app.exceptions.app_exception import AppException
+from app.exceptions.invalid_document_exception import InvalidDocumentException
 from app.processors.base.base_processor import BaseProcessor
 from app.helpers.logger import Logger
 
@@ -23,25 +24,26 @@ class PdfProcessor(BaseProcessor):
             dict: Structured processing result.
 
         Raises:
-            RuntimeError: If the file cannot be opened or processed.
+            InvalidDocumentException: If the file cannot be opened as a PDF.
             AppException: If page range exceeds document page count.
         """
         try:
-            doc = fitz.open(file_path)
+            doc = fitz.open(file_path, filetype="pdf")
         except Exception as e:
-            Logger.error("Failed to open PDF file", file=file_path, detail=str(e))
-            raise RuntimeError(f"Could not open file as PDF: {str(e)}") from e
+            Logger.warning("Failed to open PDF file", file=file_path, detail=str(e))
+            raise InvalidDocumentException("pdf") from e
 
-        total_pages = len(doc)
+        # Context manager closes the document even if page-range validation raises.
+        with doc:
+            total_pages = len(doc)
 
-        # Resolve and validate page range
-        start, end = self._resolve_page_range(from_page, to_page, total_pages)
+            # Resolve and validate page range
+            start, end = self._resolve_page_range(from_page, to_page, total_pages)
 
-        metadata = self._extract_metadata(doc)
-        pages_analysis = self._analyze_pages(doc, start, end)
-        extracted_text = self._extract_text(doc, start, end)
-        has_text = bool(extracted_text.strip())
-        doc.close()
+            metadata = self._extract_metadata(doc)
+            pages_analysis = self._analyze_pages(doc, start, end)
+            extracted_text = self._extract_text(doc, start, end)
+            has_text = bool(extracted_text.strip())
 
         diagnosis = self._build_diagnosis(has_text, pages_analysis)
 
