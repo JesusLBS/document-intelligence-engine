@@ -56,3 +56,26 @@ class TestPsmFallback:
         text, psm = TesseractOcr()._recognize(page)
 
         assert (text, psm) == ("short", PRIMARY_PSM)
+
+
+class TestDebugFolderPruning:
+    """debug_mode keeps the most recent folders instead of wiping other requests' output."""
+
+    def test_keeps_recent_folders_and_the_current_one(self, tmp_path, monkeypatch):
+        import os
+        monkeypatch.setattr(tesseract_ocr, "DEBUG_FOLDER", str(tmp_path))
+
+        for i in range(15):
+            folder = tmp_path / f"old-{i:02d}"
+            folder.mkdir()
+            os.utime(folder, (1_000_000 + i, 1_000_000 + i))
+        current = tmp_path / "current-request"
+        current.mkdir()
+        os.utime(current, (1, 1))  # oldest on disk, but it belongs to the running request
+
+        TesseractOcr()._prune_debug_folders(keep="current-request")
+
+        remaining = sorted(p.name for p in tmp_path.iterdir())
+        assert "current-request" in remaining
+        assert len(remaining) == tesseract_ocr.DEBUG_KEEP
+        assert "old-14" in remaining and "old-00" not in remaining

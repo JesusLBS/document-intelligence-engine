@@ -1,4 +1,5 @@
 import os
+import shutil
 import uuid
 
 import pytesseract
@@ -11,6 +12,8 @@ from app.helpers.logger import Logger
 
 
 DEBUG_FOLDER = "storage/debug"
+# Debug folders kept on disk (one per request with debug_mode=true); older ones are pruned.
+DEBUG_KEEP = 10
 TEMP_IMAGE_FOLDER = "storage/temp_images"
 
 # Page segmentation modes. PSM 3 (automatic layout) suits full-page documents but returns
@@ -55,7 +58,7 @@ class TesseractOcr(BaseOcr):
         )
 
         if debug_mode and request_id:
-            self._cleanup_previous()
+            self._prune_debug_folders(keep=request_id)
 
         text_parts = []
         image_paths = []
@@ -148,15 +151,29 @@ class TesseractOcr(BaseOcr):
         image.save(image_path)
         return image_path
 
-    def _cleanup_previous(self) -> None:
-        """Remove all previous debug subfolders before persisting new ones."""
-        if os.path.exists(DEBUG_FOLDER):
-            for folder in os.listdir(DEBUG_FOLDER):
-                folder_path = os.path.join(DEBUG_FOLDER, folder)
-                if os.path.isdir(folder_path):
-                    for f in os.listdir(folder_path):
-                        os.remove(os.path.join(folder_path, f))
-                    os.rmdir(folder_path)
+    def _prune_debug_folders(self, keep: str) -> None:
+        """
+        Keep only the most recent debug folders so storage/debug does not grow forever.
+
+        Unlike wiping everything, this never deletes the folder of a request that is
+        still running (its own, or a concurrent one among the most recent).
+
+        Args:
+            keep (str): Request id whose folder must survive regardless of age.
+        """
+        if not os.path.isdir(DEBUG_FOLDER):
+            return
+
+        folders = [
+            os.path.join(DEBUG_FOLDER, name)
+            for name in os.listdir(DEBUG_FOLDER)
+            if name != keep and os.path.isdir(os.path.join(DEBUG_FOLDER, name))
+        ]
+        folders.sort(key=os.path.getmtime, reverse=True)
+
+        # The current request will add one more folder, so keep DEBUG_KEEP - 1 previous ones.
+        for folder in folders[DEBUG_KEEP - 1:]:
+            shutil.rmtree(folder, ignore_errors=True)
 
     @staticmethod
     def cleanup_temp_images(temp_id: str) -> None:

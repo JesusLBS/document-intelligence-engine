@@ -33,7 +33,6 @@ class Config:
     # Extractor
     EXTRACTOR_STRATEGIES: set = {"regex", "ai"}
     DEFAULT_EXTRACTOR: str = os.getenv("DEFAULT_EXTRACTOR", "regex")
-    DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "es")
 
     # AI Provider (keep in sync with AiExtractor._resolve_provider)
     AI_PROVIDERS: set = {"gemini", "groq"}

@@ -1,17 +1,21 @@
 from abc import ABC, abstractmethod
 
+from app.extractors.extraction_context import ExtractionContext
+
 
 class BaseExtractor(ABC):
     """Base class for all document extractors."""
 
     @abstractmethod
-    def extract(self, text: str, requested_fields: list[str]) -> dict:
+    def extract(self, text: str, requested_fields: list[str], context: ExtractionContext | None = None) -> dict:
         """
         Extract fields from raw text.
 
         Args:
             text (str): Raw text from document processor.
             requested_fields (list[str]): Fields requested by client. Empty means all.
+            context (ExtractionContext, optional): Request details (document type, diagnosis,
+                page images). Extractors that don't need it ignore it.
 
         Returns:
             dict: Extracted fields in snake_case.

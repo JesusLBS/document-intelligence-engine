@@ -2,15 +2,15 @@
 
 **Read this first for "what phase are we in and what's next."** Scope and reasoning of each phase live in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md) → Project Roadmap — open it only when you need the *why*.
 
-Last updated: 2026-10-17
+Last updated: 2026-10-25
 
 ## Current phase
 
 Code audit fixes (audit of 2026-10-17, list below), in three branches off `develop`, each fix with a test that fails on the old code:
 
 1. `fix/api-correctness` — done (PR #2): issues 1–5.
-2. `fix/ai-providers-and-ocr` — **in progress**: issues 6–9, 12, 14, 18.
-3. `chore/hardening-cleanup` — after: issues 10, 11, 13, 15–17.
+2. `fix/ai-providers-and-ocr` — done (PR #3): issues 6–9, 12, 14, 18.
+3. `chore/hardening-cleanup` — **in progress**: issues 10, 11, 13, 15–17. With it, all 18 audit items are closed.
 
 Done before (merged in PR #1): single AI context (`AGENTS.md`), docs aligned with the code, status centralized here, protected-branch convention, CI with pytest, Docker-first dev environment (`Makefile` + `scripts/`, healthcheck, `.test` domain checks, `.env` out of the image).
 
@@ -60,19 +60,19 @@ Each item was verified against the running API, a measurement or official docs. 
 |---|---|---|
 | 8 | AI provider failures (non-200, blocked response → `KeyError`, empty API key still sent) end as a generic 500 instead of a clear 502/503 | fixed — `fix/ai-providers-and-ocr` |
 | 9 | nginx default `proxy_read_timeout` is 60 s; OCR at 300 DPI + up to 60 s of Gemini can exceed it (504) | fixed — `fix/ai-providers-and-ocr` |
-| 10 | `MAX_CONTENT_LENGTH` not set: Flask reads the whole upload before the size check | open |
-| 11 | `index.py` hardcodes `debug=True` (ignores `APP_DEBUG`); Werkzeug debugger reachable on port 80 from the LAN | open |
+| 10 | `MAX_CONTENT_LENGTH` not set: Flask reads the whole upload before the size check | fixed — `chore/hardening-cleanup` |
+| 11 | `index.py` hardcoded `debug=True` (ignored `APP_DEBUG`) and enabled the interactive Werkzeug debugger (in practice never rendered, since the global handler answers every error as JSON) | fixed — `chore/hardening-cleanup` |
 | 12 | Personal data in logs: failed AI parse logs 200 chars of the AI response (names, CURP); CURP initials logged | fixed — `fix/ai-providers-and-ocr` |
-| 13 | `meta.request_id` differs from the internal/log request id; `ResponseHelper` reads `APP_ENV` with a default different from `Config` | open |
+| 13 | `meta.request_id` differs from the internal/log request id; `ResponseHelper` reads `APP_ENV` with a default different from `Config` | fixed — `chore/hardening-cleanup` |
 | 14 | AI JSON parsing uses `.strip("```json")` (strips characters, not a prefix); both APIs offer native JSON mode | fixed — `fix/ai-providers-and-ocr` |
 
 ### Cleanup and design
 
 | # | Issue | Status |
 |---|---|---|
-| 15 | `DocumentService` branches on `isinstance(extractor, AiExtractor)` (extract signatures differ), contradicting the DIP described in PROJECT_PLAN.md | open |
-| 16 | Dead code: `ExtractorNotFoundException`, unused `language` field, unused `matches` in `CsfExtractor`, empty `processors/interfaces/`, duplicated `load_dotenv` | open |
-| 17 | `debug_mode` wipes other requests' debug folders; `storage/logs/app.log` grows without rotation | open |
+| 15 | `DocumentService` branches on `isinstance(extractor, AiExtractor)` (extract signatures differ), contradicting the DIP described in PROJECT_PLAN.md | fixed — `chore/hardening-cleanup` |
+| 16 | Dead code: `ExtractorNotFoundException`, unused `language` field, unused `matches` in `CsfExtractor`, empty `processors/interfaces/`, duplicated `load_dotenv` | fixed — `chore/hardening-cleanup` |
+| 17 | `debug_mode` wipes other requests' debug folders; `storage/logs/app.log` grows without rotation | fixed — `chore/hardening-cleanup` |
 | 18 | `make smoke` only checks `ok:true`, so it passed while OCR returned 0 chars (issue 7) | fixed — `fix/ai-providers-and-ocr` |
 
 ### Live verification of `fix/ai-providers-and-ocr` (2026-10-25)

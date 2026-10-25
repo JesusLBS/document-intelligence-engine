@@ -95,12 +95,12 @@ document-intelligence-engine/
 │   ├── extractors/          # BaseExtractor, CsfExtractor, AiExtractor, PassthroughExtractor
 │   │   └── ai/              # BaseAiExtractor, GeminiExtractor, GroqExtractor
 │   ├── factories/           # DocumentProcessorFactory, ExtractorFactory
-│   ├── helpers/             # ResponseHelper, Logger
+│   ├── helpers/             # ResponseHelper, Logger, request_context (request id)
 │   ├── ocr/                 # BaseOcr, TesseractOcr
 │   ├── processors/
 │   │   ├── base/
 │   │   ├── pdf/             # PdfProcessor (OCR diagnosis)
-│   │   └── image/ excel/ csv/ word/ interfaces/   # empty scaffolds (planned)
+│   │   └── image/ excel/ csv/ word/   # empty scaffolds (planned)
 │   ├── routes/              # /api/v1 blueprint
 │   ├── schemas/             # Marshmallow schemas
 │   ├── services/            # DocumentService (orchestrator)
@@ -229,6 +229,8 @@ See [.env.example](../.env.example). Key variables:
 ## API Endpoints
 
 Base URL: `/api/v1`
+
+Every response carries a `meta.request_id` and the same value in the `X-Request-ID` header; it also appears on every log line (`make logs`), so it traces one specific request. Uploads over the limit (`MAX_FILE_SIZE_MB`) get a 413 or 422.
 
 ### GET /health
 
