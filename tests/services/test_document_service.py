@@ -216,9 +216,17 @@ class TestDebugSnapshot:
     def test_digital_pdf_without_ocr_is_saved(self, monkeypatch, tmp_path):
         import json
 
+        from PIL import Image
+
         from app.helpers import debug_store
+        from app.processors.pdf import page_renderer
+
+        def convert_from_path(path, first_page=None, last_page=None, dpi=None):
+            # CI has no poppler: stand in for pdf2image, one blank page per requested page.
+            return [Image.new("RGB", (50, 50), "white") for _ in range(first_page, last_page + 1)]
 
         monkeypatch.setattr(debug_store, "DEBUG_FOLDER", str(tmp_path))
+        monkeypatch.setattr(page_renderer, "convert_from_path", convert_from_path)
 
         process_with(DocumentReadingExtractor(), monkeypatch, from_page=2, to_page=3, debug_mode=True, request_id="req-debug")
 

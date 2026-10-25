@@ -48,7 +48,7 @@ make up            # levanta en segundo plano y espera el healthcheck (no ocupa 
 make build         # igual, reconstruyendo la imagen: solo si cambian requirements.txt o el Dockerfile
 make down | restart | ps | logs | shell
 make test          # pytest dentro del contenedor; filtrar: make test ARGS="-k csf"
-make verify        # lo mismo que el CI, antes de hacer push
+make verify        # lo mismo que el CI (sin poppler ni tesseract en el PATH, como el runner), antes de hacer push
 make smoke         # health + OCR real sobre samples/pdf/ine_sample.pdf a través de nginx (sin API keys)
 ```
 

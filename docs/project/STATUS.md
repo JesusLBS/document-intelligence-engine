@@ -83,6 +83,7 @@ Each item was verified against the running API, a measurement or official docs. 
 | 21 | `debug_mode=true` saved nothing for digital PDFs: debug images were written inside the OCR step, which does not run when the PDF has embedded text (found by the developer with a real CFE bill) | fixed — `feature/address-proof-extraction` (`DebugStore`, per request, independent of OCR) |
 | 22 | Gemini only got a page image when OCR ran: a digital PDF reached it as embedded text only (`with_images=False`), out of order on a real CFE bill, and it returned 1 field while Groq did better | fixed — `feature/address-proof-extraction` (Gemini gets the PDF of the requested pages, inline base64) |
 | 23 | A Gemini 429 "quota exceeded" (free tier: 20 requests per day per model on `gemini-3.6-flash`) was reported as "temporarily unavailable, try again later", and the log cut the error before the quota name | fixed — `feature/address-proof-extraction` (message says which quota and when it resets; Groq's Retry-After is read too) |
+| 24 | CI failed on the PR: the new debug-snapshot test rendered pages with pdf2image, which needs poppler; the container has it, the CI runner does not, and `make verify` ran inside the container, so it passed locally | fixed — `feature/address-proof-extraction` (test stubs the renderer; `make verify` hides poppler/tesseract from PATH like CI) |
 
 ### Regression check against the pre-session code (2026-10-25)
 
