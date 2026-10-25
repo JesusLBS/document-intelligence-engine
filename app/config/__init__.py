@@ -39,15 +39,19 @@ class Config:
     AI_PROVIDERS: set = {"gemini", "groq"}
     AI_PROVIDER: str = os.getenv("AI_PROVIDER", "gemini")
 
-    # Groq
+    # Groq (gpt-oss is a reasoning model; empty GROQ_REASONING_EFFORT omits reasoning params for non-reasoning models)
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     GROQ_API_URL: str = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+    GROQ_REASONING_EFFORT: str = os.getenv("GROQ_REASONING_EFFORT", "low")
+    GROQ_TIMEOUT_SECONDS: int = int(os.getenv("GROQ_TIMEOUT_SECONDS", 60))
 
-    # Gemini
+    # Gemini (Gemini 3 uses thinkingLevel; empty GEMINI_THINKING_LEVEL omits it for models that don't support it)
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
     GEMINI_API_URL: str = os.getenv("GEMINI_API_URL", "https://generativelanguage.googleapis.com/v1beta/models")
+    GEMINI_THINKING_LEVEL: str = os.getenv("GEMINI_THINKING_LEVEL", "low")
+    GEMINI_TIMEOUT_SECONDS: int = int(os.getenv("GEMINI_TIMEOUT_SECONDS", 90))
 
     # Document default fields per type
     DOCUMENT_DEFAULT_FIELDS: dict = {

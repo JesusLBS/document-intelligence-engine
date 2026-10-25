@@ -1,14 +1,18 @@
 import base64
 
-import requests
-
 from app.config import Config
+from app.exceptions.ai_provider_exception import AiProviderException
 from app.extractors.ai.base_ai_extractor import BaseAiExtractor
 from app.helpers.logger import Logger
 
 
 class GeminiExtractor(BaseAiExtractor):
     """AI extractor using Google Gemini API (multimodal support)."""
+
+    provider_name = "gemini"
+
+    # Thinking tokens count against this limit on Gemini 3, so it must leave room for them.
+    MAX_OUTPUT_TOKENS = 8192
 
     def extract(
         self,
@@ -34,10 +38,16 @@ class GeminiExtractor(BaseAiExtractor):
 
         Returns:
             dict: Extracted fields in snake_case.
+
+        Raises:
+            AiProviderNotConfiguredException: If GEMINI_API_KEY is empty.
+            AiProviderException: If the call fails or the answer is blocked, truncated or not JSON.
         """
         if not text.strip() and not image_paths:
             Logger.warning("GeminiExtractor received no text and no images", document_type=document_type)
             return {}
+
+        self._require_api_key(Config.GEMINI_API_KEY, "GEMINI_API_KEY")
 
         prompt = self._build_prompt(text, requested_fields, document_type, diagnosis, all_fields, name_hints=name_hints)
 
@@ -64,23 +74,79 @@ class GeminiExtractor(BaseAiExtractor):
 
         payload = {
             "contents": [{"parts": parts}],
-            "generationConfig": {
-                "temperature": 0.1,
-                "maxOutputTokens": 2000,
-                "thinkingConfig": {
-                    "thinkingBudget": 0
-                }
-            }
+            "generationConfig": self._generation_config(),
         }
 
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        body = self._post_json(url, headers, payload, timeout=Config.GEMINI_TIMEOUT_SECONDS)
+        return self._parse_response(self._answer_text(body))
 
-        if response.status_code != 200:
-            Logger.error("Gemini API error", status=response.status_code, detail=response.text)
-            raise RuntimeError(f"Gemini API returned {response.status_code}: {response.text}")
+    def _generation_config(self) -> dict:
+        """
+        Build generationConfig for the configured model.
 
-        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return self._parse_response(raw)
+        Temperature is left at the model default: Gemini 3 docs warn that lowering it
+        can cause looping or degraded output.
+
+        Returns:
+            dict: Gemini generationConfig.
+        """
+        config = {
+            "responseMimeType": "application/json",
+            "maxOutputTokens": self.MAX_OUTPUT_TOKENS,
+        }
+
+        if Config.GEMINI_THINKING_LEVEL and self._supports_thinking_level(Config.GEMINI_MODEL):
+            config["thinkingConfig"] = {"thinkingLevel": Config.GEMINI_THINKING_LEVEL}
+
+        return config
+
+    @staticmethod
+    def _supports_thinking_level(model: str) -> bool:
+        """
+        Tell whether the model accepts thinkingConfig.thinkingLevel.
+
+        Gemini 2.x rejects it with HTTP 400 ("Thinking level is not supported for this
+        model", verified against gemini-2.5-flash); they keep their default thinking.
+
+        Args:
+            model (str): Gemini model id.
+
+        Returns:
+            bool: False for gemini-2.x models, True otherwise.
+        """
+        return not model.startswith("gemini-2")
+
+    def _answer_text(self, body: dict) -> str:
+        """
+        Return the answer text from a generateContent response, skipping thought parts.
+
+        Args:
+            body (dict): Decoded generateContent response.
+
+        Returns:
+            str: Concatenated answer text.
+
+        Raises:
+            AiProviderException: If the prompt was blocked, there is no candidate,
+                or the answer is empty (safety stop, MAX_TOKENS...).
+        """
+        block_reason = (body.get("promptFeedback") or {}).get("blockReason")
+        if block_reason:
+            raise AiProviderException(self.provider_name, f"blocked the request ({block_reason})")
+
+        candidates = body.get("candidates") or []
+        if not candidates:
+            raise AiProviderException(self.provider_name, "returned no answer")
+
+        candidate = candidates[0]
+        parts = (candidate.get("content") or {}).get("parts") or []
+        text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
+
+        if not text.strip():
+            finish_reason = candidate.get("finishReason", "unknown")
+            raise AiProviderException(self.provider_name, f"returned an empty answer (finishReason={finish_reason})")
+
+        return text
 
     def _build_image_part(self, image_path: str) -> dict:
         """

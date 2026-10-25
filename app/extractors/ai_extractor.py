@@ -78,12 +78,8 @@ class AiExtractor(BaseExtractor):
         name_hints = get_name_hints_from_text(text)
 
         if name_hints:
-            Logger.info(
-                "CURP name hints decoded",
-                apellido_paterno=name_hints["apellido_paterno_initial"],
-                apellido_materno=name_hints["apellido_materno_initial"],
-                nombre=name_hints["nombre_initial"],
-            )
+            # Never log the decoded initials: they are derived from personal data.
+            Logger.info("CURP name hints decoded", provider=self._provider)
 
         return self._client.extract(
             text,

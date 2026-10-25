@@ -1,12 +1,16 @@
-import requests
-
 from app.config import Config
+from app.exceptions.ai_provider_exception import AiProviderException
 from app.extractors.ai.base_ai_extractor import BaseAiExtractor
 from app.helpers.logger import Logger
 
 
 class GroqExtractor(BaseAiExtractor):
     """AI extractor using Groq API (text-only, no multimodal support)."""
+
+    provider_name = "groq"
+
+    # Reasoning models (gpt-oss) spend part of the completion budget reasoning.
+    MAX_COMPLETION_TOKENS = 4096
 
     def extract(
         self,
@@ -32,6 +36,10 @@ class GroqExtractor(BaseAiExtractor):
 
         Returns:
             dict: Extracted fields in snake_case.
+
+        Raises:
+            AiProviderNotConfiguredException: If GROQ_API_KEY is empty.
+            AiProviderException: If the call fails or the answer is empty or not JSON.
         """
         if image_paths:
             Logger.warning("GroqExtractor does not support images, ignoring image_paths", document_type=document_type)
@@ -39,6 +47,8 @@ class GroqExtractor(BaseAiExtractor):
         if not text or not text.strip():
             Logger.warning("GroqExtractor received empty text", document_type=document_type)
             return {}
+
+        self._require_api_key(Config.GROQ_API_KEY, "GROQ_API_KEY")
 
         prompt = self._build_prompt(
             text, requested_fields, document_type, diagnosis, all_fields, name_hints=name_hints
@@ -51,18 +61,55 @@ class GroqExtractor(BaseAiExtractor):
             "Content-Type": "application/json",
         }
 
+        body = self._post_json(Config.GROQ_API_URL, headers, self._payload(prompt), timeout=Config.GROQ_TIMEOUT_SECONDS)
+        return self._parse_response(self._answer_text(body))
+
+    def _payload(self, prompt: str) -> dict:
+        """
+        Build the chat completions payload in JSON mode.
+
+        Reasoning parameters are only sent when GROQ_REASONING_EFFORT is set, so the
+        same code works with non-reasoning models.
+
+        Args:
+            prompt (str): Extraction prompt (already asks for a JSON object, required by JSON mode).
+
+        Returns:
+            dict: Groq chat completions payload.
+        """
         payload = {
             "model": Config.GROQ_MODEL,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1,
-            "max_tokens": 1000,
+            "response_format": {"type": "json_object"},
+            "max_completion_tokens": self.MAX_COMPLETION_TOKENS,
         }
 
-        response = requests.post(Config.GROQ_API_URL, headers=headers, json=payload, timeout=30)
+        if Config.GROQ_REASONING_EFFORT:
+            payload["reasoning_effort"] = Config.GROQ_REASONING_EFFORT
+            payload["include_reasoning"] = False
 
-        if response.status_code != 200:
-            Logger.error("Groq API error", status=response.status_code, detail=response.text)
-            raise RuntimeError(f"Groq API returned {response.status_code}: {response.text}")
+        return payload
 
-        raw = response.json()["choices"][0]["message"]["content"]
-        return self._parse_response(raw)
+    def _answer_text(self, body: dict) -> str:
+        """
+        Return the answer text from a chat completions response.
+
+        Args:
+            body (dict): Decoded chat completions response.
+
+        Returns:
+            str: Answer content.
+
+        Raises:
+            AiProviderException: If there is no choice or the content is empty.
+        """
+        choices = body.get("choices") or []
+        if not choices:
+            raise AiProviderException(self.provider_name, "returned no answer")
+
+        content = (choices[0].get("message") or {}).get("content") or ""
+        if not content.strip():
+            finish_reason = choices[0].get("finish_reason", "unknown")
+            raise AiProviderException(self.provider_name, f"returned an empty answer (finish_reason={finish_reason})")
+
+        return content
