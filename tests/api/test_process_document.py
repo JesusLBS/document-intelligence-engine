@@ -148,3 +148,28 @@ class TestProcessPipeline:
         assert data["text"] is None
         assert data["extractedFields"]["rfc"] == "XAXX010101AAA"
         assert data["extractedFields"]["curp"] == "XAXX010101HDFAAA09"
+
+
+class FailingAiService:
+    """Simulates a provider failure surfacing from the service layer."""
+
+    def process(self, **kwargs) -> dict:
+        from app.exceptions.ai_provider_exception import AiProviderException
+        raise AiProviderException("gemini", "API returned HTTP 404")
+
+
+class TestAiProviderErrors:
+    """Provider failures reach the client as 502 with a clear, data-free message."""
+
+    def test_provider_failure_returns_502(self, client, make_pdf, upload, monkeypatch):
+        monkeypatch.setattr(routes.document_controller, "document_service", FailingAiService())
+
+        response = client.post(ENDPOINT, data={
+            "file": upload(make_pdf()),
+            "document_type": "ine",
+            "extractor": "ai",
+            "provider": "gemini",
+        })
+
+        assert response.status_code == 502
+        assert response.get_json()["message"] == "AI provider 'gemini' failed: API returned HTTP 404"

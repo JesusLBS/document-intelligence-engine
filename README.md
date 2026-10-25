@@ -191,7 +191,8 @@ API en **http://document-intelligence.test** (nginx en el puerto 80 → Flask en
 | Cada petición tarda ~5 s | `/etc/resolver/test` manda los `.test` al DNS de Laravel Herd y Herd está apagado: macOS espera 5 s antes de usar `/etc/hosts`. Arranca Herd o revisa ese archivo. `make doctor` lo detecta (línea `dns`) |
 | `env file .env not found` | Falta `cp .env.example .env` |
 | Cambié `requirements.txt` y no se refleja | `make build` |
-| `extractor=ai` responde 500 | Revisa las claves de IA en `.env` y luego `make restart` |
+| `extractor=ai` responde 503 | Falta la clave del proveedor (`GEMINI_API_KEY` / `GROQ_API_KEY`) en `.env`; agrégala y `make restart` |
+| `extractor=ai` responde 502 o 504 | El proveedor falló: el mensaje dice por qué (HTTP, respuesta bloqueada o truncada, timeout). Un `HTTP 404` suele ser un modelo apagado: revisa `GEMINI_MODEL` / `GROQ_MODEL` contra las páginas de deprecaciones |
 
 ### Opcional: Python local (sin Docker)
 
@@ -220,6 +221,8 @@ Consulta [.env.example](./.env.example). Variables principales:
 | `AI_PROVIDER` | Provider IA por defecto (`gemini` o `groq`) |
 | `GEMINI_API_KEY` | Clave API de Google Gemini |
 | `GROQ_API_KEY` | Clave API de Groq |
+| `GEMINI_MODEL` / `GROQ_MODEL` | Modelos (default `gemini-3.6-flash` / `openai/gpt-oss-120b`) |
+| `GEMINI_THINKING_LEVEL` / `GROQ_REASONING_EFFORT` | Nivel de razonamiento (`low`); vacío para modelos que no lo soportan |
 
 ---
 

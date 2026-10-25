@@ -474,7 +474,7 @@ Pipeline:
 
 1. Convert PDF pages to images via `pdf2image` (300 DPI, poppler)
 2. Convert each page to grayscale (Pillow)
-3. Run Tesseract via `pytesseract` (Spanish language pack, hardcoded `spa`)
+3. Run Tesseract via `pytesseract` (Spanish language pack, hardcoded `spa`) with `--psm 3` (automatic layout); if a page yields fewer than 30 characters, retry with `--psm 11` (sparse text) and keep the longer result. Reason: PSM 3 returned 0 characters on a photographed INE placed on a page, PSM 11 returned 337 (measured 2026-10-17 on `samples/pdf/ine_sample.pdf`)
 4. Save the original (non-grayscale) page images to `storage/temp_images/{request_id}/` for multimodal AI (Gemini)
 5. Always delete temp images after processing. With `debug_mode=true`, the grayscale images are **additionally** saved to `storage/debug/{request_id}/`, and previous debug folders are wiped first
 
@@ -561,8 +561,8 @@ Implemented providers:
 
 | Provider | Class | Capabilities |
 |----------|-------|--------------|
-| Gemini | `GeminiExtractor` | Multimodal (text + page images) |
-| Groq | `GroqExtractor` | Text-only |
+| Gemini | `GeminiExtractor` | Multimodal (text + page images). Default `gemini-3.6-flash`, `thinkingLevel: low`, JSON mode, temperature left at default (Gemini 3 guidance) |
+| Groq | `GroqExtractor` | Text-only. Default `openai/gpt-oss-120b` (reasoning model: `reasoning_effort: low`, `include_reasoning: false`), JSON mode |
 
 Provider selection: configurable per request (`provider` form field) or via `AI_PROVIDER` env var.
 

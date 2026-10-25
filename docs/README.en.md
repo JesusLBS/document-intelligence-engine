@@ -191,7 +191,8 @@ API at **http://document-intelligence.test** (nginx on port 80 → Flask on app:
 | Every request takes ~5 s | `/etc/resolver/test` sends `.test` lookups to Laravel Herd's DNS and Herd is stopped: macOS waits 5 s before using `/etc/hosts`. Start Herd or review that file. `make doctor` detects it (`dns` line) |
 | `env file .env not found` | Run `cp .env.example .env` |
 | Changed `requirements.txt` and nothing changed | `make build` |
-| `extractor=ai` returns 500 | Check the AI keys in `.env`, then `make restart` |
+| `extractor=ai` returns 503 | The provider key (`GEMINI_API_KEY` / `GROQ_API_KEY`) is missing in `.env`; add it and `make restart` |
+| `extractor=ai` returns 502 or 504 | The provider failed: the message says why (HTTP, blocked or truncated answer, timeout). `HTTP 404` usually means a shut-down model: check `GEMINI_MODEL` / `GROQ_MODEL` against the deprecation pages |
 
 ### Optional: local Python (no Docker)
 
@@ -220,6 +221,8 @@ See [.env.example](../.env.example). Key variables:
 | `AI_PROVIDER` | Default AI provider (`gemini` or `groq`) |
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `GROQ_API_KEY` | Groq API key |
+| `GEMINI_MODEL` / `GROQ_MODEL` | Models (default `gemini-3.6-flash` / `openai/gpt-oss-120b`) |
+| `GEMINI_THINKING_LEVEL` / `GROQ_REASONING_EFFORT` | Reasoning level (`low`); empty for models that don't support it |
 
 ---
 

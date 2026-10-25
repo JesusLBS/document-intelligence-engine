@@ -13,6 +13,13 @@ from app.helpers.logger import Logger
 DEBUG_FOLDER = "storage/debug"
 TEMP_IMAGE_FOLDER = "storage/temp_images"
 
+# Page segmentation modes. PSM 3 (automatic layout) suits full-page documents but returns
+# nothing on a photographed ID card placed on a page; PSM 11 (sparse text) recovers it.
+# Measured on samples/pdf/ine_sample.pdf at 300 DPI: PSM 3 -> 0 chars, PSM 11 -> 337 chars.
+PRIMARY_PSM = 3
+FALLBACK_PSM = 11
+MIN_PAGE_CHARS = 30
+
 
 class TesseractOcr(BaseOcr):
     """OCR implementation using Tesseract via pytesseract."""
@@ -64,14 +71,35 @@ class TesseractOcr(BaseOcr):
             temp_path = self._persist_temp_page(image, temp_id, i + 1)
             image_paths.append(temp_path)
 
-            text = pytesseract.image_to_string(processed, lang="spa")
+            text, psm = self._recognize(processed)
             text_parts.append(text)
-            Logger.info("OCR page processed", page=i + 1, chars=len(text.strip()))
+            Logger.info("OCR page processed", page=i + 1, chars=len(text.strip()), psm=psm)
 
         full_text = "\n".join(text_parts)
         Logger.info("OCR extraction completed", total_chars=len(full_text.strip()), images_generated=len(image_paths))
 
         return {"text": full_text, "image_paths": image_paths}
+
+    def _recognize(self, image: Image.Image) -> tuple[str, int]:
+        """
+        Run Tesseract with the primary layout mode, falling back to sparse-text mode
+        when the page yields (almost) no text.
+
+        Args:
+            image (Image.Image): Preprocessed page image.
+
+        Returns:
+            tuple[str, int]: Recognized text and the PSM that produced it.
+        """
+        text = pytesseract.image_to_string(image, lang="spa", config=f"--psm {PRIMARY_PSM}")
+        if len(text.strip()) >= MIN_PAGE_CHARS:
+            return text, PRIMARY_PSM
+
+        fallback = pytesseract.image_to_string(image, lang="spa", config=f"--psm {FALLBACK_PSM}")
+        if len(fallback.strip()) > len(text.strip()):
+            return fallback, FALLBACK_PSM
+
+        return text, PRIMARY_PSM
 
     def _preprocess(self, image: Image.Image) -> Image.Image:
         """
