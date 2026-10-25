@@ -8,6 +8,7 @@ from app.factories.document_processor_factory import DocumentProcessorFactory
 from app.factories.extractor_factory import ExtractorFactory
 from app.ocr.tesseract_ocr import TesseractOcr
 from app.utils.case_converter import dict_to_camel_case
+from app.utils.id_normalizer import normalize_identifiers
 from app.extractors.extraction_context import ExtractionContext
 
 
@@ -92,6 +93,8 @@ class DocumentService:
                 image_paths=image_paths,
             )
             extracted = extractor.extract(raw_text, fields_to_extract, context)
+            # Fix OCR look-alike errors in structured IDs (CURP, clave de elector), whatever the extractor.
+            extracted = normalize_identifiers(extracted)
 
             processor_result["extractedFields"] = dict_to_camel_case(extracted)
             return processor_result

@@ -27,7 +27,7 @@ Casos de uso actuales:
 - **Arquitectura limpia**: Controller → Service → Factory → Processor/Extractor, con contratos e inversión de dependencias.
 - **Patrones de diseño**: Strategy (procesadores, extractores, OCR) y Factory (selección dinámica por tipo de archivo y documento).
 - **Pipeline PDF inteligente**: PyMuPDF diagnostica densidad de texto y decide entre extracción embebida u OCR.
-- **OCR**: Tesseract sobre páginas rasterizadas a 300 DPI y convertidas a escala de grises, más imágenes temporales de cada página para IA multimodal.
+- **OCR**: páginas rasterizadas a 400 DPI y recortadas a la zona con contenido (a color, sin gris), Tesseract con modo de texto disperso como respaldo, y corrección por posición de errores típicos del OCR en CURP y clave de elector.
 - **IA intercambiable**: `AiExtractor` con providers Gemini (imagen + texto) y Groq (solo texto).
 - **Validación de entrada**: Marshmallow schemas, excepciones centralizadas, logging estructurado.
 - **Contenedorización y CI**: Docker + nginx como reverse proxy; GitHub Actions corre pytest en cada PR.
@@ -69,7 +69,7 @@ DocumentProcessorFactory → PdfProcessor
   ↓
 Diagnosis (OCR required?)
   ├── NO  → Embedded text extraction
-  └── YES → TesseractOcr (escala de grises → texto + temp images)
+  └── YES → TesseractOcr (recorte al contenido → texto + temp images)
   ↓
 ExtractorFactory
   ├── CsfExtractor (regex)
@@ -167,7 +167,7 @@ API en **http://document-intelligence.test** (nginx en el puerto 80 → Flask en
 | `make up` | Levanta en segundo plano y espera a que la API responda (healthcheck). No ocupa la terminal |
 | `make build` | Igual, pero reconstruye la imagen. Solo hace falta si cambian `requirements.txt` o el `Dockerfile` |
 | `make down` | Apaga y elimina los contenedores |
-| `make restart` | Reinicia solo la API (por ejemplo, tras cambiar `.env`) |
+| `make restart` | Reinicia solo el proceso de la API. **No** recarga `.env`: para eso, `make up` |
 | `make logs` | Sigue los logs de Flask. Ctrl+C sale de los logs, **no apaga nada** |
 | `make ps` | Estado de los contenedores |
 | `make shell` | Shell dentro del contenedor de la API |
@@ -191,7 +191,7 @@ API en **http://document-intelligence.test** (nginx en el puerto 80 → Flask en
 | Cada petición tarda ~5 s | `/etc/resolver/test` manda los `.test` al DNS de Laravel Herd y Herd está apagado: macOS espera 5 s antes de usar `/etc/hosts`. Arranca Herd o revisa ese archivo. `make doctor` lo detecta (línea `dns`) |
 | `env file .env not found` | Falta `cp .env.example .env` |
 | Cambié `requirements.txt` y no se refleja | `make build` |
-| `extractor=ai` responde 503 | Falta la clave del proveedor (`GEMINI_API_KEY` / `GROQ_API_KEY`) en `.env`; agrégala y `make restart` |
+| `extractor=ai` responde 503 | Falta la clave del proveedor (`GEMINI_API_KEY` / `GROQ_API_KEY`) en `.env`; agrégala y `make up` (recrea el contenedor; `make restart` no recarga `.env`) |
 | `extractor=ai` responde 502 o 504 | El proveedor falló: el mensaje dice por qué (HTTP, respuesta bloqueada o truncada, timeout). Un `HTTP 404` suele ser un modelo apagado: revisa `GEMINI_MODEL` / `GROQ_MODEL` contra las páginas de deprecaciones |
 
 ### Opcional: Python local (sin Docker)

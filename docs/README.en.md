@@ -27,7 +27,7 @@ Current use cases:
 - **Clean architecture**: Controller → Service → Factory → Processor/Extractor, with contracts and dependency inversion.
 - **Design patterns**: Strategy (processors, extractors, OCR) and Factory (dynamic selection by file and document type).
 - **Smart PDF pipeline**: PyMuPDF diagnoses text density and chooses between embedded extraction or OCR.
-- **OCR**: Tesseract over pages rasterized at 300 DPI and converted to grayscale, plus temporary page images for multimodal AI.
+- **OCR**: pages rasterized at 400 DPI and cropped to their content area (color, no grayscale), Tesseract with sparse-text fallback, and positional correction of typical OCR errors in CURP and clave de elector.
 - **Interchangeable AI**: `AiExtractor` with Gemini (image + text) and Groq (text-only) providers.
 - **Input validation**: Marshmallow schemas, centralized exceptions, structured logging.
 - **Containerization and CI**: Docker + nginx as reverse proxy; GitHub Actions runs pytest on every PR.
@@ -69,7 +69,7 @@ DocumentProcessorFactory → PdfProcessor
   ↓
 Diagnosis (OCR required?)
   ├── NO  → Embedded text extraction
-  └── YES → TesseractOcr (grayscale → text + temp images)
+  └── YES → TesseractOcr (crop to content → text + temp images)
   ↓
 ExtractorFactory
   ├── CsfExtractor (regex)
@@ -167,7 +167,7 @@ API at **http://document-intelligence.test** (nginx on port 80 → Flask on app:
 | `make up` | Start in the background and wait until the API answers (healthcheck). Frees the terminal |
 | `make build` | Same, but rebuilds the image. Only needed when `requirements.txt` or the `Dockerfile` change |
 | `make down` | Stop and remove the containers |
-| `make restart` | Restart only the API (e.g. after editing `.env`) |
+| `make restart` | Restart only the API process. Does **not** reload `.env`: use `make up` |
 | `make logs` | Follow Flask logs. Ctrl+C leaves the logs, **stops nothing** |
 | `make ps` | Container status |
 | `make shell` | Shell inside the API container |
@@ -191,7 +191,7 @@ API at **http://document-intelligence.test** (nginx on port 80 → Flask on app:
 | Every request takes ~5 s | `/etc/resolver/test` sends `.test` lookups to Laravel Herd's DNS and Herd is stopped: macOS waits 5 s before using `/etc/hosts`. Start Herd or review that file. `make doctor` detects it (`dns` line) |
 | `env file .env not found` | Run `cp .env.example .env` |
 | Changed `requirements.txt` and nothing changed | `make build` |
-| `extractor=ai` returns 503 | The provider key (`GEMINI_API_KEY` / `GROQ_API_KEY`) is missing in `.env`; add it and `make restart` |
+| `extractor=ai` returns 503 | The provider key (`GEMINI_API_KEY` / `GROQ_API_KEY`) is missing in `.env`; add it and `make up` (recreates the container; `make restart` does not reload `.env`) |
 | `extractor=ai` returns 502 or 504 | The provider failed: the message says why (HTTP, blocked or truncated answer, timeout). `HTTP 404` usually means a shut-down model: check `GEMINI_MODEL` / `GROQ_MODEL` against the deprecation pages |
 
 ### Optional: local Python (no Docker)

@@ -14,7 +14,7 @@ build: ## Rebuild the image and start (after changing requirements.txt or the Do
 down: ## Stop and remove the containers
 	@docker compose down
 
-restart: ## Restart only the API (e.g. after editing .env)
+restart: ## Restart only the API process (does NOT reload .env: use make up for that)
 	@docker compose restart app
 
 ps: ## Container status
