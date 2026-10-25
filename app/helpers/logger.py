@@ -1,5 +1,7 @@
 import logging
 
+from app.helpers.request_context import current_request_id
+
 
 class Logger:
     """Thin wrapper around Python logging, mirroring Laravel's Log facade."""
@@ -53,7 +55,8 @@ class Logger:
     @staticmethod
     def _format(message: str, context: dict) -> str:
         """
-        Append context dict as key=value pairs to the message.
+        Append context dict as key=value pairs to the message, plus the current
+        request id when logging inside a request.
 
         Args:
             message (str): Base log message.
@@ -62,6 +65,9 @@ class Logger:
         Returns:
             str: Formatted message with context.
         """
+        request_id = current_request_id()
+        if request_id:
+            context = {"request_id": request_id, **context}
         if not context:
             return message
         extra = " ".join(f"{k}={v}" for k, v in context.items())

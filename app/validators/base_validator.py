@@ -9,6 +9,10 @@ def validate(schema: Schema):
     """
     Decorator factory that validates request data against a Marshmallow schema.
 
+    The deserialized data (types coerced, defaults applied) is passed to the
+    route as the `validated` keyword argument, so handlers never re-parse the
+    raw form and always see exactly what validation accepted.
+
     Args:
         schema (Schema): Marshmallow schema instance.
 
@@ -35,10 +39,10 @@ def validate(schema: Schema):
                 data[key] = file
 
             try:
-                schema.load(data)
+                validated = schema.load(data)
             except ValidationError as e:
                 return ResponseHelper.validation_error(e.messages)
 
-            return func(*args, **kwargs)
+            return func(*args, validated=validated, **kwargs)
         return wrapper
     return decorator

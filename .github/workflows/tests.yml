@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Single source for the Python version (Dockerfile uses the same 3.12).
+          python-version-file: '.python-version'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Tests are pure Python: no Tesseract, poppler or API keys needed (pdf2image/pytesseract are
+      # stubbed where used). `make verify` hides both from PATH to catch a test that needs them.
+      # When a test needs real OCR, install tesseract-ocr/tesseract-ocr-spa/poppler-utils here.
+      - name: Run tests
+        run: pytest tests/ -v

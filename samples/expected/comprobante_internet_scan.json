@@ -1,0 +1,22 @@
+{
+  "sample": "comprobante_internet_scan_sample.pdf",
+  "document_type": "comprobante_domicilio",
+  "note": "Synthetic scanned bill (image only, goes through OCR). It prints no interior number.",
+  "fields": {
+    "nombre_titular": "MARIA EJEMPLO MUESTRA",
+    "calle": "CALLE FICTICIA",
+    "numero_exterior": "45",
+    "numero_interior": null,
+    "colonia": "DEL VALLE CENTRO",
+    "municipio": "BENITO JUAREZ",
+    "estado": "CIUDAD DE MEXICO",
+    "codigo_postal": "03100",
+    "proveedor": "RED HOGAR TELECOMUNICACIONES",
+    "tipo_servicio": "internet",
+    "numero_servicio": "9876543210",
+    "fecha_emision": "2026-10-05",
+    "periodo_inicio": "2026-09-01",
+    "periodo_fin": "2026-09-30",
+    "fecha_limite_pago": "2026-10-20"
+  }
+}

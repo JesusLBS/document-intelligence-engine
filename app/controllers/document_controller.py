@@ -1,8 +1,7 @@
-from flask import request
-
+from app.helpers.request_context import current_request_id
 from app.helpers.response_helper import ResponseHelper
 from app.services.document_service import DocumentService
-from app.config import Config
+
 
 class DocumentController:
     """Handle incoming document requests."""
@@ -21,42 +20,32 @@ class DocumentController:
             data={"message": "Document Intelligence Engine is running"}
         )
 
-    def process(self) -> tuple:
+    def process(self, validated: dict) -> tuple:
         """
         Handle document upload and processing.
+
+        Args:
+            validated (dict): Request data already deserialized by ProcessDocumentSchema
+                (booleans and integers coerced, defaults applied).
 
         Returns:
             tuple: Flask JSON response and status code.
         """
-        file = request.files.get("file")
-        document_type = request.form.get("document_type")
-        requested_fields = request.form.getlist("fields")
-        include_raw_text = request.form.get("include_raw_text", "true").lower() == "true"
-        force_ocr = request.form.get("force_ocr", "false").lower() == "true"
-        debug_mode = request.form.get("debug_mode", "false").lower() == "true"
-
-        from_page = request.form.get("from_page")
-        to_page = request.form.get("to_page")
-        from_page = int(from_page) if from_page else None
-        to_page = int(to_page) if to_page else None
-        extractor_strategy = request.form.get("extractor", Config.DEFAULT_EXTRACTOR)
-        all_fields = request.form.get("all_fields", "false").lower() == "true"
-        provider = request.form.get("provider", Config.AI_PROVIDER)
-
         result = self.document_service.process(
-            file=file,
-            document_type=document_type,
-            provider=provider,
-            requested_fields=requested_fields,
-            from_page=from_page,
-            to_page=to_page,
-            force_ocr=force_ocr,
-            debug_mode=debug_mode,
-            extractor_strategy=extractor_strategy,
-            all_fields=all_fields
+            file=validated["file"],
+            document_type=validated["document_type"],
+            provider=validated["provider"],
+            requested_fields=validated["requested_fields"],
+            from_page=validated["from_page"],
+            to_page=validated["to_page"],
+            force_ocr=validated["force_ocr"],
+            debug_mode=validated["debug_mode"],
+            extractor_strategy=validated["extractor"],
+            all_fields=validated["all_fields"],
+            request_id=current_request_id(),
         )
 
-        if not include_raw_text:
+        if not validated["include_raw_text"]:
             result["text"] = None
 
         return ResponseHelper.success(data=result)

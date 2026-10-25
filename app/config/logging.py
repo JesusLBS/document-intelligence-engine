@@ -1,5 +1,6 @@
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 
 from app.config import Config
 
@@ -9,7 +10,7 @@ def configure_logging() -> None:
     Configure root logging with console and file handlers.
 
     Sets up formatting, log level from env, and writes to storage/logs/app.log
-    while keeping stdout output for Docker/console visibility.
+    (rotated at 5 MB, 3 backups) while keeping stdout output for Docker/console visibility.
     """
     log_dir = "storage/logs"
     os.makedirs(log_dir, exist_ok=True)
@@ -24,7 +25,7 @@ def configure_logging() -> None:
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
 
-    file_handler = logging.FileHandler(os.path.join(log_dir, "app.log"))
+    file_handler = RotatingFileHandler(os.path.join(log_dir, "app.log"), maxBytes=5 * 1024 * 1024, backupCount=3)
     file_handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()

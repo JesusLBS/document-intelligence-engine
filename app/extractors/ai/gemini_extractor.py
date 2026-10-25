@@ -1,14 +1,20 @@
 import base64
 
-import requests
-
 from app.config import Config
+from app.exceptions.ai_provider_exception import AiProviderException
 from app.extractors.ai.base_ai_extractor import BaseAiExtractor
 from app.helpers.logger import Logger
 
 
 class GeminiExtractor(BaseAiExtractor):
     """AI extractor using Google Gemini API (multimodal support)."""
+
+    provider_name = "gemini"
+    # Gemini reads PDFs natively (text layer + page images), so it gets the document itself.
+    accepts_document_file = True
+
+    # Thinking tokens count against this limit on Gemini 3, so it must leave room for them.
+    MAX_OUTPUT_TOKENS = 8192
 
     def extract(
         self,
@@ -17,11 +23,12 @@ class GeminiExtractor(BaseAiExtractor):
         document_type: str = None,
         diagnosis: dict = None,
         all_fields: bool = False,
-        image_paths: list[str] = None,
+        document_file: str = None,
+        document_mime_type: str = None,
         name_hints: dict = None,
     ) -> dict:
         """
-        Extract fields from text and/or images using Gemini LLM.
+        Extract fields from the document file (and its text as reference) using Gemini.
 
         Args:
             text (str): Raw text extracted from document.
@@ -29,15 +36,22 @@ class GeminiExtractor(BaseAiExtractor):
             document_type (str, optional): Document type for context.
             diagnosis (dict, optional): Diagnosis metadata for context.
             all_fields (bool): If True, extract all available fields.
-            image_paths (list[str], optional): Paths to page images to send alongside text.
+            document_file (str, optional): File with only the requested pages, sent inline (base64).
+            document_mime_type (str, optional): Its media type ('application/pdf', 'image/png'...).
             name_hints (dict, optional): Pre-decoded CURP name initials hints.
 
         Returns:
             dict: Extracted fields in snake_case.
+
+        Raises:
+            AiProviderNotConfiguredException: If GEMINI_API_KEY is empty.
+            AiProviderException: If the call fails or the answer is blocked, truncated or not JSON.
         """
-        if not text.strip() and not image_paths:
-            Logger.warning("GeminiExtractor received no text and no images", document_type=document_type)
+        if not text.strip() and not document_file:
+            Logger.warning("GeminiExtractor received no text and no document", document_type=document_type)
             return {}
+
+        self._require_api_key(Config.GEMINI_API_KEY, "GEMINI_API_KEY")
 
         prompt = self._build_prompt(text, requested_fields, document_type, diagnosis, all_fields, name_hints=name_hints)
 
@@ -45,8 +59,9 @@ class GeminiExtractor(BaseAiExtractor):
             "Sending request to Gemini API",
             document_type=document_type,
             model=Config.GEMINI_MODEL,
-            with_images=bool(image_paths),
-            image_count=len(image_paths) if image_paths else 0,
+            with_document=bool(document_file),
+            document_mime_type=document_mime_type,
+            text_chars=len(text.strip()),
         )
 
         url = f"{Config.GEMINI_API_URL}/{Config.GEMINI_MODEL}:generateContent"
@@ -58,46 +73,102 @@ class GeminiExtractor(BaseAiExtractor):
 
         parts = [{"text": prompt}]
 
-        if image_paths:
-            for image_path in image_paths:
-                parts.append(self._build_image_part(image_path))
+        if document_file:
+            parts.append(self._build_file_part(document_file, document_mime_type))
 
         payload = {
             "contents": [{"parts": parts}],
-            "generationConfig": {
-                "temperature": 0.1,
-                "maxOutputTokens": 2000,
-                "thinkingConfig": {
-                    "thinkingBudget": 0
-                }
-            }
+            "generationConfig": self._generation_config(),
         }
 
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        body = self._post_json(url, headers, payload, timeout=Config.GEMINI_TIMEOUT_SECONDS)
+        return self._parse_response(self._answer_text(body))
 
-        if response.status_code != 200:
-            Logger.error("Gemini API error", status=response.status_code, detail=response.text)
-            raise RuntimeError(f"Gemini API returned {response.status_code}: {response.text}")
-
-        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return self._parse_response(raw)
-
-    def _build_image_part(self, image_path: str) -> dict:
+    def _generation_config(self) -> dict:
         """
-        Build a Gemini inline_data part from an image file.
+        Build generationConfig for the configured model.
+
+        Temperature is left at the model default: Gemini 3 docs warn that lowering it
+        can cause looping or degraded output.
+
+        Returns:
+            dict: Gemini generationConfig.
+        """
+        config = {
+            "responseMimeType": "application/json",
+            "maxOutputTokens": self.MAX_OUTPUT_TOKENS,
+        }
+
+        if Config.GEMINI_THINKING_LEVEL and self._supports_thinking_level(Config.GEMINI_MODEL):
+            config["thinkingConfig"] = {"thinkingLevel": Config.GEMINI_THINKING_LEVEL}
+
+        return config
+
+    @staticmethod
+    def _supports_thinking_level(model: str) -> bool:
+        """
+        Tell whether the model accepts thinkingConfig.thinkingLevel.
+
+        Gemini 2.x rejects it with HTTP 400 ("Thinking level is not supported for this
+        model", verified against gemini-2.5-flash); they keep their default thinking.
 
         Args:
-            image_path (str): Absolute path to the image file.
+            model (str): Gemini model id.
+
+        Returns:
+            bool: False for gemini-2.x models, True otherwise.
+        """
+        return not model.startswith("gemini-2")
+
+    def _answer_text(self, body: dict) -> str:
+        """
+        Return the answer text from a generateContent response, skipping thought parts.
+
+        Args:
+            body (dict): Decoded generateContent response.
+
+        Returns:
+            str: Concatenated answer text.
+
+        Raises:
+            AiProviderException: If the prompt was blocked, there is no candidate,
+                or the answer is empty (safety stop, MAX_TOKENS...).
+        """
+        block_reason = (body.get("promptFeedback") or {}).get("blockReason")
+        if block_reason:
+            raise AiProviderException(self.provider_name, f"blocked the request ({block_reason})")
+
+        candidates = body.get("candidates") or []
+        if not candidates:
+            raise AiProviderException(self.provider_name, "returned no answer")
+
+        candidate = candidates[0]
+        parts = (candidate.get("content") or {}).get("parts") or []
+        text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
+
+        if not text.strip():
+            finish_reason = candidate.get("finishReason", "unknown")
+            raise AiProviderException(self.provider_name, f"returned an empty answer (finishReason={finish_reason})")
+
+        return text
+
+    def _build_file_part(self, file_path: str, mime_type: str) -> dict:
+        """
+        Build a Gemini inline_data part from a document file (PDF up to 50 MB, or an image).
+
+        Args:
+            file_path (str): Path to the file.
+            mime_type (str): Its media type.
 
         Returns:
             dict: Gemini-compatible inline_data part.
         """
-        with open(image_path, "rb") as f:
+        with open(file_path, "rb") as f:
             encoded = base64.b64encode(f.read()).decode("utf-8")
 
         return {
             "inline_data": {
-                "mime_type": "image/png",
+                "mime_type": mime_type,
                 "data": encoded,
             }
         }

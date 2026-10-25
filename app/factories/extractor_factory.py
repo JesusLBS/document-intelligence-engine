@@ -2,7 +2,6 @@ from app.extractors.base_extractor import BaseExtractor
 from app.extractors.csf_extractor import CsfExtractor
 from app.extractors.ai_extractor import AiExtractor
 from app.extractors.passthrough_extractor import PassthroughExtractor
-from app.exceptions.extractor_not_found_exception import ExtractorNotFoundException
 
 
 EXTRACTOR_MAP = {
