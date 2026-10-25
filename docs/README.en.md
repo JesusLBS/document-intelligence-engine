@@ -28,9 +28,22 @@ Current use cases:
 - **Design patterns**: Strategy (processors, extractors, OCR) and Factory (dynamic selection by file and document type).
 - **Smart PDF pipeline**: PyMuPDF diagnoses text density and chooses between embedded extraction or OCR.
 - **OCR**: pages rasterized at 400 DPI and cropped to their content area (color, no grayscale), Tesseract with sparse-text fallback, and positional correction of typical OCR errors in CURP and clave de elector.
-- **Interchangeable AI**: `AiExtractor` with Gemini (image + text) and Groq (text-only) providers.
+- **Interchangeable AI**: `AiExtractor` with Gemini (PDF of the requested pages + text) and Groq (text-only) providers.
 - **Input validation**: Marshmallow schemas, centralized exceptions, structured logging.
 - **Containerization and CI**: Docker + nginx as reverse proxy; GitHub Actions runs pytest on every PR.
+
+---
+
+## Built with AI, under verifiable rules
+
+This project is built with **Claude Code as the coding agent**: the AI implements, and the developer defines architecture and scope, reviews, verifies with real documents and makes the commits. What matters is enforced by code, not by trusting the model:
+
+- **A single context source** for any AI ([`AGENTS.md`](../AGENTS.md)), with status and plan kept apart.
+- **Technical guardrails with tests:** hooks that stop the AI from committing or reading `.env`, a `pre-push` hook protecting `main`/`develop`, CI on every PR and `make verify` reproducing CI.
+- **Skills and an agent** for repeatable work: suggesting commits, starting the environment, checking extraction against references (`make check-extraction`) and auditing the documentation.
+- **AI mistakes caught by the process**, documented with the change each one left behind.
+
+Details, files and real cases: **[docs/AI_WORKFLOW.en.md](./AI_WORKFLOW.en.md)**
 
 ---
 
@@ -92,34 +105,35 @@ document-intelligence-engine/
 │   ├── contracts/           # DocumentProcessorInterface
 │   ├── controllers/         # DocumentController (no business logic)
 │   ├── exceptions/          # AppException + global handler
-│   ├── extractors/          # BaseExtractor, CsfExtractor, AiExtractor, PassthroughExtractor
+│   ├── extractors/          # BaseExtractor, CsfExtractor, AiExtractor, PassthroughExtractor (fallback), ExtractionContext
 │   │   └── ai/              # BaseAiExtractor, GeminiExtractor, GroqExtractor
 │   ├── factories/           # DocumentProcessorFactory, ExtractorFactory
-│   ├── helpers/             # ResponseHelper, Logger, request_context (request id)
+│   ├── helpers/             # ResponseHelper, Logger, request_context (request id), DebugStore (debug_mode)
 │   ├── ocr/                 # BaseOcr, TesseractOcr
 │   ├── processors/
 │   │   ├── base/
-│   │   ├── pdf/             # PdfProcessor (OCR diagnosis)
-│   │   └── image/ excel/ csv/ word/   # empty scaffolds (planned)
+│   │   ├── pdf/             # PdfProcessor (diagnosis, requested pages), page_renderer (render + crop)
+│   │   └── image/ excel/ csv/ word/   # empty extension points (possible extensions, see PROJECT_PLAN)
 │   ├── routes/              # /api/v1 blueprint
 │   ├── schemas/             # Marshmallow schemas
 │   ├── services/            # DocumentService (orchestrator)
-│   ├── utils/               # curp_decoder, case_converter
+│   ├── utils/               # curp_decoder, case_converter, id_normalizer (CURP/clave), date_normalizer (ISO)
 │   └── validators/          # Request validation (decorator)
-├── tests/                   # pytest
+├── tests/                   # pytest (includes the Claude Code hooks)
 ├── docs/
 │   ├── project/             # PROJECT_PLAN.md (design and roadmap), STATUS.md (status)
 │   ├── screenshots/         # Postman screenshots used in the README
+│   ├── AI_WORKFLOW.md       # How it is developed with AI (and AI_WORKFLOW.en.md)
 │   └── README.en.md         # This file
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
-├── scripts/                 # up, verify, smoke, doctor (called by the Makefile) and generate_samples.py
-├── samples/                 # Samples: public INE and fictitious address proofs (scripts/generate_samples.py)
+├── scripts/                 # up, verify, smoke, doctor, check_extraction (called by the Makefile) and generate_samples.py
+├── samples/                 # pdf/: public INE and fictitious address proofs · expected/: make check-extraction references
 ├── storage/                 # debug/, logs/ (runtime, git-ignored)
 ├── uploads/                 # Temporary uploads (git-ignored)
 ├── .github/workflows/       # CI (pytest)
 ├── .githooks/               # pre-push hook blocking direct pushes to main/develop
-├── .claude/                 # Claude Code hook and skills
+├── .claude/                 # Claude Code: hooks (commits, .env), skills and revisor-docs agent
 ├── AGENTS.md                # Context and rules for any AI assistant
 ├── CLAUDE.md, GEMINI.md     # Only import AGENTS.md
 ├── docker-compose.yml
@@ -175,7 +189,8 @@ API at **http://document-intelligence.test** (nginx on port 80 → Flask on app:
 | `make shell` | Shell inside the API container |
 | `make test` | pytest inside the container (`make test ARGS="-k csf"` to filter) |
 | `make verify` | Same checks CI runs; use it before pushing |
-| `make smoke` | End-to-end check through nginx |
+| `make smoke` | End-to-end check through nginx (no API keys) |
+| `make check-extraction` | Real AI extraction against the `samples/expected` references (Groq by default; `ARGS="--provider all"` adds Gemini, which counts against its daily quota) |
 | `make doctor` | Machine prerequisites, `.env`, `/etc/hosts`, port 80 and hooks |
 
 `make` with no arguments lists the commands. Logic lives in `scripts/`; the `Makefile` only provides shortcuts.
@@ -219,7 +234,7 @@ See [.env.example](../.env.example). Key variables:
 | `APP_ENV` | Environment (`local`, `production`) |
 | `APP_DEBUG` | Flask debug mode |
 | `MAX_FILE_SIZE_MB` | Max file size (default: 10) |
-| `DEFAULT_EXTRACTOR` | Default extractor (`regex` or `ai`) |
+| `DEFAULT_EXTRACTOR` | Default extractor for `csf` (`regex` or `ai`); `ine` and `comprobante_domicilio` always use `ai` |
 | `AI_PROVIDER` | Default AI provider (`gemini` or `groq`) |
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `GROQ_API_KEY` | Groq API key |
@@ -384,7 +399,19 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
 }
 ```
 
-> Postman screenshots: pending in `docs/screenshots/`.
+> Postman screenshots: `docs/screenshots/`.
+
+### Health check
+<img src="./screenshots/health.png" width="700"/>
+
+### CSF — regex extraction
+<img src="./screenshots/process-csf-regex.png" width="700"/>
+
+### INE — AI extraction
+<img src="./screenshots/process-ine-ai.png" width="700"/>
+
+### Input validation (422)
+<img src="./screenshots/process-validation-422.png" width="700"/>
 
 ---
 
@@ -394,6 +421,7 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
 make test        # pytest inside the container
 make verify      # same as CI, before pushing
 make smoke       # end-to-end check (health + OCR) against the running API
+make check-extraction   # real AI extraction vs samples/expected (spends AI calls)
 ```
 
 `make test` and `make verify` run the same tests GitHub Actions runs on every PR and push to `main`/`develop` (`.github/workflows/tests.yml`).
@@ -405,6 +433,7 @@ make smoke       # end-to-end check (health + OCR) against the running API
 - [docs/project/STATUS.md](./project/STATUS.md) — current phase, what works, known bugs, next step.
 - [docs/project/PROJECT_PLAN.md](./project/PROJECT_PLAN.md) — vision, SOLID, patterns, architecture decisions and phased roadmap.
 - [AGENTS.md](../AGENTS.md) — request lifecycle, conventions and working rules (for people and AI assistants).
+- [docs/AI_WORKFLOW.en.md](./AI_WORKFLOW.en.md) — how it is developed with AI: guardrails, skills, agent and mistakes caught by the process.
 
 ---
 

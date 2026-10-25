@@ -1,0 +1,22 @@
+{
+  "sample": "comprobante_luz_sample.pdf",
+  "document_type": "comprobante_domicilio",
+  "note": "Synthetic digital bill (embedded text). domicilio_completo is not compared: punctuation and order vary by provider.",
+  "fields": {
+    "nombre_titular": "XAVIER EJEMPLO PRUEBA",
+    "calle": "AV DE LOS EJEMPLOS",
+    "numero_exterior": "123",
+    "numero_interior": "4",
+    "colonia": "CENTRO",
+    "municipio": "CUAUHTEMOC",
+    "estado": "CIUDAD DE MEXICO",
+    "codigo_postal": "06000",
+    "proveedor": "ENERGIA DEL VALLE S.A. DE C.V.",
+    "tipo_servicio": "luz",
+    "numero_servicio": "000123456789",
+    "fecha_emision": "2026-10-14",
+    "periodo_inicio": "2026-08-12",
+    "periodo_fin": "2026-10-13",
+    "fecha_limite_pago": "2026-10-28"
+  }
+}

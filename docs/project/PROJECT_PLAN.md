@@ -295,7 +295,7 @@ ExtractorFactory
     │              → Groq (text-only)
     └── PassthroughExtractor (regex fallback)
     ↓
-Validator (planned)
+Business rules (Phase 4)
     ↓
 Response Builder (camelCase fields)
     ↓
@@ -420,11 +420,9 @@ Diagnosis (text density, scan detection)
  ├── Sufficient text → Extract embedded text
  └── OCR required (or force_ocr=true)
        ↓
-       Convert pages to images (pdf2image, 400 DPI)
+       Render the requested pages (pdf2image, 400 DPI), crop to content in color (Pillow)
        ↓
-       Crop to the content area, keeping color (Pillow)
-       ↓
-       Tesseract OCR + temp images for AI
+       Tesseract OCR → text
        ↓
 ExtractorFactory (regex / ai)
        ↓
@@ -507,10 +505,10 @@ Current extractors (via `ExtractorFactory`):
 
 `AiExtractor` delegates to provider-specific classes:
 
-* `GeminiExtractor` — multimodal (text + page images from OCR pipeline)
+* `GeminiExtractor` — reads the document: PDF of the requested pages inline (base64) + text as reference
 * `GroqExtractor` — text-only
 
-For INE documents, `AiExtractor` enriches prompts with CURP decoding hints via `app/utils/curp_decoder.py`.
+When a CURP is found in the text (any document type, mainly INE), `AiExtractor` enriches the prompt with name hints decoded by `app/utils/curp_decoder.py`.
 
 Regex approach (initial):
 
@@ -531,7 +529,7 @@ AI output is made uniform across providers by the app, not by the prompt alone:
 Examples:
 
 * Document age <= 3 months
-* Name matches doctor information
+* CURP matches the birth date and the clave de elector
 * Valid tax regime
 * Valid expiration date
 * Required fields present
@@ -570,7 +568,7 @@ Implemented providers:
 
 | Provider | Class | Capabilities |
 |----------|-------|--------------|
-| Gemini | `GeminiExtractor` | Multimodal (text + page images). Default `gemini-3.6-flash`, `thinkingLevel: low`, JSON mode, temperature left at default (Gemini 3 guidance) |
+| Gemini | `GeminiExtractor` | Reads the document: PDF of the requested pages inline (base64) + text as reference. Default `gemini-3.6-flash`, `thinkingLevel: low`, JSON mode, temperature left at default (Gemini 3 guidance) |
 | Groq | `GroqExtractor` | Text-only. Default `openai/gpt-oss-120b` (reasoning model: `reasoning_effort: low`, `include_reasoning: false`), JSON mode |
 
 Provider selection: configurable per request (`provider` form field) or via `AI_PROVIDER` env var.
@@ -587,7 +585,7 @@ BaseExtractor
     └── PassthroughExtractor
 ```
 
-Planned providers:
+Possible extension (Phase 5, not planned):
 
 * OpenAI
 * Claude
@@ -600,12 +598,11 @@ Planned providers:
 
 The current repository tree lives in [`README.md`](../../README.md) → "Estructura del repo" (single copy, to avoid drift).
 
-Planned additions (not yet present):
+Planned additions (Phase 4):
 
-* Real processors in `app/processors/{image,excel,csv,word}/` (today they are empty scaffold folders with `__init__.py` only)
-* `app/validators/` business-rule validators (today the folder only holds request validation)
-* Dedicated regex extractors for INE, comprobante de domicilio, etc.
-* `docs/diagrams/`
+* Business-rule validators (location decided when Phase 4 starts; `app/validators/` today only holds request validation)
+
+Possible extensions (not planned): real processors in `app/processors/{image,excel,csv,word}/` (empty extension points today). INE and comprobante de domicilio stay AI-only: no regex extractors are planned for them.
 
 ---
 
@@ -649,6 +646,8 @@ Tests
 
 Scope of each phase. Which phase is done, in progress or next: [`STATUS.md`](./STATUS.md) — never mark progress here.
 
+**Scope of version 1 (2026-10-25):** three document types — INE, CSF and comprobante de domicilio — read reliably (Phase 2) and validated with business rules (Phase 4). With Phases 1, 2, 4 and 6 done, the project is complete and functional for those three types. Phases 3 and 5 are **possible extensions**: the architecture is ready for them (factories, contracts, the `providers` map), but they are not planned work, so they can never leave the project half-finished.
+
 ## Phase 1 — Core Platform
 
 * Docker Environment
@@ -662,35 +661,41 @@ Scope of each phase. Which phase is done, in progress or next: [`STATUS.md`](./S
 ## Phase 2 — Data Extraction
 
 * CSF regex extractor with unit tests
-* AI extraction (Gemini multimodal, Groq text-only)
+* AI extraction: Gemini (reads the PDF of the requested pages) and Groq (text only)
 * CURP decoder hints for INE
 * Proof of address via AI: default fields, field descriptions in the prompt, ISO date normalization
 * Default fields for all registered document types (INE, CSF, proof of address)
+* `from_page` / `to_page` respected end to end; `debug_mode` snapshot for any document
 
-## Phase 3 — File Processors
+## Phase 3 — File Processors (possible extension)
 
-* Image Processor
-* Excel Processor
-* CSV Processor
-* Word Processor
+Not planned. How to add one: AGENTS.md → Extender el pipeline (`DocumentProcessorInterface`).
+
+* Image Processor (JPG/PNG uploads)
+* Excel, CSV and Word Processors
+* Other document types (bank statements, professional licenses… were early examples, dropped from v1)
 
 ## Phase 4 — Business Validation
 
-* Business Validation Engine
-* Document age rules, field cross-validation, required fields
+For INE, then CSF, then comprobante de domicilio:
 
-## Phase 5 — AI Providers
+* Stable field formats first (e.g. INE dates: field descriptions + normalization)
+* Business Validation Engine (rules live in the app, never in the prompt: "AI extracts, rules validate")
+* Required fields, document age, expiration, field cross-validation (e.g. CURP vs birth date)
 
-* Gemini (multimodal)
-* Groq (text-only)
+## Phase 5 — More AI Providers (possible extension)
+
+Not planned. How to add one: AGENTS.md → Extender el pipeline (`BaseAiExtractor` + `providers` map).
+
 * OpenAI, Claude, Azure Document Intelligence, AWS Textract
 
 ## Phase 6 — Quality & Observability
 
 * CI (GitHub Actions running pytest on every PR)
 * Service, factory and API tests (mocked OCR and AI providers)
+* Live extraction checks against references (`make check-extraction`)
+* AI-assisted development guardrails: hooks, skills and a docs-audit agent ([`docs/AI_WORKFLOW.md`](../AI_WORKFLOW.md))
 * Postman collection + screenshots
-* Advanced Document Intelligence Features
 
 ---
 
