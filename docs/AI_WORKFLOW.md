@@ -27,7 +27,7 @@ Separar estado de plan evita el error más común en proyectos asistidos por IA:
 | La IA nunca lee, edita ni busca en `.env` (API keys) | Hook `PreToolUse` sobre Read, Edit, Write, Grep, Glob y Bash; permite `.env.example` | [`.claude/hooks/block-env-access.sh`](../.claude/hooks/block-env-access.sh) | [`tests/hooks/`](../tests/hooks/test_claude_hooks.py) |
 | Nadie hace push directo a `main` / `develop` | Hook de git `pre-push` | [`.githooks/pre-push`](../.githooks/pre-push) | — |
 | Nada se mergea con tests en rojo | GitHub Actions en cada PR | [`.github/workflows/tests.yml`](../.github/workflows/tests.yml) | — |
-| "En mi máquina pasa" no basta | `make verify` reproduce el entorno del CI (poppler y tesseract ocultos) | [`scripts/verify.sh`](../scripts/verify.sh) | — |
+| "En mi máquina pasa" no basta | `make verify` reproduce el CI: corre sobre una copia limpia con solo los archivos que irían al repo (sin `.env` ni archivos ignorados) y con poppler y tesseract ocultos | [`scripts/verify.sh`](../scripts/verify.sh) | — |
 
 Las barreras de Claude Code aplican solo a Claude Code. Para otras IAs, `AGENTS.md` dice explícitamente que esas reglas dependen de ellas ([`GEMINI.md`](../GEMINI.md)).
 
@@ -79,6 +79,7 @@ La prueba de que el proceso funciona son los errores que no llegaron a `main`. C
 | `debug_mode` no guardaba nada en PDFs digitales; Gemini no recibía el documento | El desarrollador probó un recibo real de CFE | Debug por petición e independiente del OCR; Gemini recibe el PDF del rango (issues 21 y 22) |
 | Un 429 por cuota diaria se reportaba como "saturación" | Prueba del desarrollador | El mensaje dice qué cuota y cuándo se reinicia (issue 23) |
 | Un test pasaba en Docker y fallaba en el CI | El CI del PR | `make verify` reproduce el entorno del CI (issue 24) |
+| El hook de `.env` bloqueaba `.env*` solo donde existía un `.env` real (bash expandía el comodín) | El CI del PR a `main` | `make verify` corre sobre una copia limpia, y los tests del hook corren en carpetas vacías y con archivos (issue 26). También mostró que hace falta proteger las ramas: ese PR se mergeó con el check en rojo |
 
 ## 6. Límites (para no exagerar)
 

@@ -1,17 +1,25 @@
 import json
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
 
 HOOKS = Path(__file__).resolve().parents[2] / ".claude" / "hooks"
 REPO = "/repo"
+EMPTY_DIR = Path(tempfile.mkdtemp(prefix="hook-cwd-"))
 
 
-def run_hook(name: str, tool_name: str, tool_input: dict) -> bool:
-    """Run a Claude Code PreToolUse hook with the JSON it receives; True when it denies the call."""
+def run_hook(name: str, tool_name: str, tool_input: dict, cwd: Path = None) -> bool:
+    """
+    Run a Claude Code PreToolUse hook with the JSON it receives; True when it denies the call.
+
+    Runs in an empty directory by default: the result must never depend on which files exist
+    where the hook runs (a real .env in the developer's clone once hid a bug that CI caught).
+    """
     payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": tool_name, "tool_input": tool_input})
-    result = subprocess.run(["bash", str(HOOKS / name)], input=payload, capture_output=True, text=True, check=True)
+    result = subprocess.run(["bash", str(HOOKS / name)], input=payload, capture_output=True, text=True,
+                            check=True, cwd=cwd or EMPTY_DIR)
     return '"permissionDecision": "deny"' in result.stdout
 
 
@@ -29,6 +37,7 @@ class TestBlockEnvAccess:
         ("Bash", {"command": "cat .env"}),
         ("Bash", {"command": "grep KEY .env | head"}),
         ("Bash", {"command": "source ./.env.local"}),
+        ("Bash", {"command": "cat .env*"}),
         ("Bash", {"command": "python3 -c 'print(open(\".env\").read())'"}),
     ])
     def test_env_files_are_denied(self, tool_name, tool_input):
@@ -46,6 +55,15 @@ class TestBlockEnvAccess:
     ])
     def test_everything_else_is_allowed(self, tool_name, tool_input):
         assert not run_hook("block-env-access.sh", tool_name, tool_input)
+
+    @pytest.mark.parametrize("files", [[], [".env.example"], [".env", ".env.example"]])
+    def test_wildcards_do_not_depend_on_the_files_where_the_hook_runs(self, tmp_path, files):
+        # Regression: ".env*" was expanded as a filename glob, so it was denied only where a .env existed.
+        for name in files:
+            (tmp_path / name).write_text("X=1")
+
+        assert run_hook("block-env-access.sh", "Grep", {"pattern": "KEY", "glob": ".env*"}, cwd=tmp_path)
+        assert run_hook("block-env-access.sh", "Bash", {"command": "cat .env*"}, cwd=tmp_path)
 
 
 # Built from parts so this file itself never contains the literal command the hook looks for.

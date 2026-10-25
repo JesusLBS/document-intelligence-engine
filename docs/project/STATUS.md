@@ -6,7 +6,9 @@ Last updated: 2026-10-25
 
 ## Current phase
 
-**Alignment before Phase 4** — `docs/ai-workflow-and-cleanup` (**in progress**): docs aligned with the code, roadmap scoped to version 1 (INE, CSF, comprobante de domicilio; Phases 3 and 5 declared possible extensions), and the AI-assisted workflow made explicit and enforced: [`docs/AI_WORKFLOW.md`](../AI_WORKFLOW.md), `.env` hook with tests, `/verificar-extraccion` skill + `make check-extraction`, `revisor-docs` agent. PR to `develop`, then `develop` → `main`.
+**CI fix before Phase 4** — `fix/ci-env-hook-glob` (**in progress**): issue 26, CI red on `develop` and on the PR to `main`. Then the `develop` → `main` PR.
+
+Done just before: **alignment before Phase 4** — `docs/ai-workflow-and-cleanup` (merged into `develop` with a failing check, see issue 26): docs aligned with the code, roadmap scoped to version 1 (INE, CSF, comprobante de domicilio; Phases 3 and 5 declared possible extensions), and the AI-assisted workflow made explicit and enforced: [`docs/AI_WORKFLOW.md`](../AI_WORKFLOW.md), `.env` hook with tests, `/verificar-extraccion` skill + `make check-extraction`, `revisor-docs` agent. 
 
 **Next target:** Phase 4 — Business Validation, as one stage for the three types, in this order: INE, CSF, comprobante de domicilio. First step for INE: stable field formats (see follow-ups). With Phase 4 done, version 1 is complete.
 
@@ -26,7 +28,7 @@ Version 1 = Phases 1, 2, 4 and 6 for INE, CSF and comprobante de domicilio. Phas
 | 3 — File Processors | possible extension | Not planned. `app/processors/{image,excel,csv,word}/` are empty extension points |
 | 4 — Business Validation | next | INE, then CSF, then comprobante de domicilio |
 | 5 — More AI Providers | possible extension | Gemini and Groq are part of Phase 2; OpenAI, Claude, Azure, AWS not planned |
-| 6 — Quality & Observability | in progress | CI on every PR; 152 tests (API, service, extractors with mocked HTTP, OCR, normalizers, debug store, Claude Code hooks); `make verify` reproduces CI; `make check-extraction` for live checks. Pending: Postman screenshots refresh |
+| 6 — Quality & Observability | in progress | CI on every PR; 156 tests (API, service, extractors with mocked HTTP, OCR, normalizers, debug store, Claude Code hooks); `make verify` reproduces CI; `make check-extraction` for live checks. Pending: Postman screenshots refresh |
 
 ## What works today
 
@@ -43,7 +45,7 @@ Version 1 = Phases 1, 2, 4 and 6 for INE, CSF and comprobante de domicilio. Phas
 | Comprobante de domicilio | Real CFE bill verified by the developer with Groq and Gemini. 16 default fields (holder, itemized address, provider, service type and number, issue date, billed period, due date); dates as ISO. Synthetic samples: digital bill 16/16 and scanned bill 15/16 (no interior number printed) on Groq and Gemini |
 | `ine`, `comprobante_domicilio` with `extractor=regex` | 422 — AI-only types (no regex extractor) |
 | `make check-extraction` | Live extraction vs `samples/expected` (Groq by default, Gemini on request). Today: both comprobante samples 15/15, INE 3/3 stable fields, on Groq |
-| AI guardrails | Claude Code hooks deny commits and any access to `.env*` (25 hook tests); `revisor-docs` agent for phase closes / PRs to `main` |
+| AI guardrails | Claude Code hooks deny commits and any access to `.env*` (29 hook tests); `revisor-docs` agent for phase closes / PRs to `main` |
 
 ## Code audit (2026-10-17)
 
@@ -88,6 +90,7 @@ Each item was verified against the running API, a measurement or official docs. 
 | 23 | A Gemini 429 "quota exceeded" (free tier: 20 requests per day per model on `gemini-3.6-flash`) was reported as "temporarily unavailable, try again later", and the log cut the error before the quota name | fixed — `feature/address-proof-extraction` (message says which quota and when it resets; Groq's Retry-After is read too) |
 | 24 | CI failed on the PR: the new debug-snapshot test rendered pages with pdf2image, which needs poppler; the container has it, the CI runner does not, and `make verify` ran inside the container, so it passed locally | fixed — `feature/address-proof-extraction` (test stubs the renderer; `make verify` hides poppler/tesseract from PATH like CI) |
 | 25 | `make verify` (issue 24 fix) trimmed PATH to Python's bin: it hid poppler/tesseract as intended but also bash/grep/sed, which the CI runner has, so the new hook tests failed only locally | fixed — `docs/ai-workflow-and-cleanup` (failing stubs for poppler/tesseract placed first on PATH instead) |
+| 26 | CI red after `docs/ai-workflow-and-cleanup`: `block-env-access.sh` looped over unquoted values, so bash expanded `.env*` as a filename glob. It was denied only where a real `.env` existed (the developer's clone, where `make verify` ran) and allowed in CI. The PR was merged anyway (no branch protection) | fixed — `fix/ci-env-hook-glob` (`set -f` in the hook; tests run the hook in empty and populated folders; `make verify` now runs on a clean copy of the files git would commit, like the CI checkout) |
 
 ### Regression check against the pre-session code (2026-10-25)
 
@@ -129,7 +132,7 @@ Through nginx, synthetic samples from `scripts/generate_samples.py`:
 - Postman screenshots: none for the comprobante; the INE one predates the PDF input to Gemini (developer's own action).
 - Gemini free tier: 20 requests per day per model (enforcement is approximate: a 429 said ~8.9 h and a call passed 83 s later). Enabling billing on the Google AI project (developer's decision) removes it; until then, live tests should prefer Groq.
 
-- Enable branch protection on `main` and `develop` in GitHub (manual, developer's own action; requires a public repo or a paid plan for private repos).
+- Enable branch protection on `main` and `develop` in GitHub, requiring the `Tests / pytest` check (manual, developer's own action; requires a public repo or a paid plan for private repos). Without it, the PR of issue 26 could be merged with a red check.
 - Lint/format (ruff) — deferred to avoid a large unrelated diff.
 - The Docker image runs Flask's development server (`python index.py`, debug on). Fine for local use; a production-like setup would need a WSGI server (e.g. gunicorn) and debug off.
 - `samples/pdf/ine_sample.pdf` is a public internet example of an INE; consider replacing it with a fully synthetic sample for the portfolio.
