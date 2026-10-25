@@ -5,6 +5,11 @@
 
 input="$(cat)"
 
+# Values are split into words below; never expand them as filename globs. Without this, ".env*"
+# expanded to the files in the current directory: it was denied only where a real .env existed
+# (the developer's clone) and allowed in CI, where there is none.
+set -f
+
 deny() {
   cat <<'JSON'
 {
@@ -22,7 +27,7 @@ JSON
 is_env_name() {
   case "$1" in
     .env.example) return 1 ;;
-    .env|.env.*) return 0 ;;
+    .env|.env.*|.env\*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -41,11 +46,11 @@ case "$(basename "${glob_pattern:-x}")" in
   .env|.env\*|.env.\*) deny ;;
 esac
 
-# Bash: .env used as a path argument (cat .env, source .env, < .env, ./.env.local, open(".env")).
+# Bash: .env used as a path argument (cat .env, cat .env*, source .env, < .env, ./.env.local, open(".env")).
 # Quotes arrive JSON-escaped (\"), so the backslash also counts as a delimiter.
 # Backticked mentions in text written by heredocs (`.env`) are not path arguments.
 if printf '%s' "$input" | grep -q '"tool_name"[[:space:]]*:[[:space:]]*"Bash"'; then
-  for token in $(printf '%s' "$input" | grep -oE '(^|[[:space:]=<>/(\\"'"'"'])\.env(\.[A-Za-z0-9_-]+)?([[:space:];|&)>\\"'"'"']|$)' \
+  for token in $(printf '%s' "$input" | grep -oE '(^|[[:space:]=<>/(\\"'"'"'])\.env(\.[A-Za-z0-9_-]+)?([[:space:];|&)>*\\"'"'"']|$)' \
                  | grep -oE '\.env(\.[A-Za-z0-9_-]+)?'); do
     is_env_name "$token" && deny
   done

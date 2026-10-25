@@ -27,7 +27,7 @@ Keeping status apart from the plan avoids the most common failure in AI-assisted
 | The AI never reads, edits or searches `.env` (API keys) | `PreToolUse` hook on Read, Edit, Write, Grep, Glob and Bash; `.env.example` allowed | [`.claude/hooks/block-env-access.sh`](../.claude/hooks/block-env-access.sh) | [`tests/hooks/`](../tests/hooks/test_claude_hooks.py) |
 | Nobody pushes straight to `main` / `develop` | git `pre-push` hook | [`.githooks/pre-push`](../.githooks/pre-push) | — |
 | Nothing merges with failing tests | GitHub Actions on every PR | [`.github/workflows/tests.yml`](../.github/workflows/tests.yml) | — |
-| "Works on my machine" is not enough | `make verify` reproduces the CI environment (poppler and tesseract hidden) | [`scripts/verify.sh`](../scripts/verify.sh) | — |
+| "Works on my machine" is not enough | `make verify` reproduces CI: it runs on a clean copy holding only the files that would be committed (no `.env`, no ignored files), with poppler and tesseract hidden | [`scripts/verify.sh`](../scripts/verify.sh) | — |
 
 Claude Code guardrails only apply inside Claude Code. For other AIs, `AGENTS.md` states explicitly that those rules depend on them ([`GEMINI.md`](../GEMINI.md)).
 
@@ -79,6 +79,7 @@ The proof that the process works is the mistakes that never reached `main`. Each
 | `debug_mode` saved nothing for digital PDFs; Gemini never got the document | The developer tested a real CFE bill | Per-request debug independent of OCR; Gemini gets the PDF of the requested pages (issues 21 and 22) |
 | A daily-quota 429 was reported as "overloaded" | Developer test | The message says which quota and when it resets (issue 23) |
 | A test passed in Docker and failed in CI | The PR's CI run | `make verify` reproduces the CI environment (issue 24) |
+| The `.env` hook denied `.env*` only where a real `.env` existed (bash expanded the wildcard) | CI on the PR to `main` | `make verify` runs on a clean copy, and the hook tests run in empty and populated folders (issue 26). It also showed that branches need protection: that PR was merged with a red check |
 
 ## 6. Limits (to avoid overselling)
 
