@@ -14,7 +14,6 @@ class ProcessDocumentSchema(Schema):
         load_default=Config.DEFAULT_EXTRACTOR,
         validate=validate.OneOf(sorted(Config.EXTRACTOR_STRATEGIES)),
     )
-    language = fields.Str(load_default=Config.DEFAULT_LANGUAGE)
     include_raw_text = fields.Bool(load_default=True)
     from_page = fields.Int(load_default=None, allow_none=True)
     to_page = fields.Int(load_default=None, allow_none=True)

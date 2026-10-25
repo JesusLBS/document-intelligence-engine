@@ -8,7 +8,7 @@ from app.factories.document_processor_factory import DocumentProcessorFactory
 from app.factories.extractor_factory import ExtractorFactory
 from app.ocr.tesseract_ocr import TesseractOcr
 from app.utils.case_converter import dict_to_camel_case
-from app.extractors.ai_extractor import AiExtractor
+from app.extractors.extraction_context import ExtractionContext
 
 
 class DocumentService:
@@ -26,6 +26,7 @@ class DocumentService:
         extractor_strategy: str = None,
         all_fields: bool = False,
         provider: str = None,
+        request_id: str = None,
     ) -> dict:
         """
         Save, process and extract data from an uploaded document.
@@ -41,12 +42,14 @@ class DocumentService:
             extractor_strategy (str): Extractor strategy ('regex' or 'ai').
             all_fields (bool): If True, extract all available fields.
             provider (str, optional): AI provider override ('gemini', 'groq').
+            request_id (str, optional): Id of the HTTP request (names temp files and debug/OCR images);
+                a new one is generated when called outside a request.
 
         Returns:
             dict: Processing result with extracted fields in camelCase.
         """
         extension = self._get_extension(file.filename)
-        request_id = str(uuid.uuid4())
+        request_id = request_id or str(uuid.uuid4())
         file_path = self._save(file, extension, request_id)
         strategy = extractor_strategy or Config.DEFAULT_EXTRACTOR
         image_paths = []
@@ -82,17 +85,13 @@ class DocumentService:
             else:
                 fields_to_extract = Config.DOCUMENT_DEFAULT_FIELDS.get(document_type, [])
 
-            if isinstance(extractor, AiExtractor):
-                extracted = extractor.extract(
-                    raw_text,
-                    fields_to_extract,
-                    document_type=document_type,
-                    diagnosis=diagnosis,
-                    all_fields=all_fields,
-                    image_paths=image_paths,
-                )
-            else:
-                extracted = extractor.extract(raw_text, fields_to_extract)
+            context = ExtractionContext(
+                document_type=document_type,
+                diagnosis=diagnosis,
+                all_fields=all_fields,
+                image_paths=image_paths,
+            )
+            extracted = extractor.extract(raw_text, fields_to_extract, context)
 
             processor_result["extractedFields"] = dict_to_camel_case(extracted)
             return processor_result

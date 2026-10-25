@@ -1,5 +1,6 @@
 from app.config import Config
 from app.extractors.base_extractor import BaseExtractor
+from app.extractors.extraction_context import ExtractionContext
 from app.extractors.ai.base_ai_extractor import BaseAiExtractor
 from app.helpers.logger import Logger
 from app.utils.curp_decoder import get_name_hints_from_text
@@ -52,29 +53,20 @@ class AiExtractor(BaseExtractor):
         Logger.info("AI provider resolved", provider=provider)
         return provider_class()
 
-    def extract(
-        self,
-        text: str,
-        requested_fields: list[str],
-        document_type: str = None,
-        diagnosis: dict = None,
-        all_fields: bool = False,
-        image_paths: list[str] = None,
-    ) -> dict:
+    def extract(self, text: str, requested_fields: list[str], context: ExtractionContext | None = None) -> dict:
         """
         Delegate extraction to the resolved AI provider.
 
         Args:
             text (str): Raw text from document.
             requested_fields (list[str]): Fields to extract.
-            document_type (str, optional): Document type for context.
-            diagnosis (dict, optional): OCR diagnosis metadata.
-            all_fields (bool): If True, extract all available fields.
-            image_paths (list[str], optional): Paths to page images for multimodal providers.
+            context (ExtractionContext, optional): Document type, OCR diagnosis, all_fields flag
+                and page images for multimodal providers.
 
         Returns:
             dict: Extracted fields in snake_case.
         """
+        context = context or ExtractionContext()
         name_hints = get_name_hints_from_text(text)
 
         if name_hints:
@@ -84,9 +76,9 @@ class AiExtractor(BaseExtractor):
         return self._client.extract(
             text,
             requested_fields,
-            document_type=document_type,
-            diagnosis=diagnosis,
-            all_fields=all_fields,
-            image_paths=image_paths,
+            document_type=context.document_type,
+            diagnosis=context.diagnosis,
+            all_fields=context.all_fields,
+            image_paths=context.image_paths,
             name_hints=name_hints,
         )

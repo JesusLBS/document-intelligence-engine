@@ -1,9 +1,11 @@
-import os
 import uuid
 import traceback
 from datetime import datetime, timezone
 
 from flask import jsonify
+
+from app.config import Config
+from app.helpers.request_context import current_request_id
 
 
 class ResponseHelper:
@@ -14,8 +16,8 @@ class ResponseHelper:
 
     @staticmethod
     def _get_env() -> str:
-        """Return current APP_ENV from environment variables."""
-        return os.environ.get("APP_ENV", "production")
+        """Return current APP_ENV from Config (single source of env settings)."""
+        return Config.APP_ENV
 
     @staticmethod
     def _meta(exc: Exception = None) -> dict:
@@ -31,7 +33,8 @@ class ResponseHelper:
         env = ResponseHelper._get_env()
 
         meta = {
-            "request_id": str(uuid.uuid4()),
+            # Same id as the logs and the X-Request-ID header; a fresh one only outside a request.
+            "request_id": current_request_id() or str(uuid.uuid4()),
             "env": env,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

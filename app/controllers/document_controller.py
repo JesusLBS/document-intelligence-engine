@@ -1,3 +1,4 @@
+from app.helpers.request_context import current_request_id
 from app.helpers.response_helper import ResponseHelper
 from app.services.document_service import DocumentService
 
@@ -41,6 +42,7 @@ class DocumentController:
             debug_mode=validated["debug_mode"],
             extractor_strategy=validated["extractor"],
             all_fields=validated["all_fields"],
+            request_id=current_request_id(),
         )
 
         if not validated["include_raw_text"]:

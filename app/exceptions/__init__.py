@@ -1,5 +1,4 @@
 from app.exceptions.app_exception import AppException
 from app.exceptions.processor_not_found_exception import ProcessorNotFoundException
-from app.exceptions.extractor_not_found_exception import ExtractorNotFoundException
 from app.exceptions.invalid_document_exception import InvalidDocumentException
 from app.exceptions.ai_provider_exception import AiProviderException, AiProviderNotConfiguredException

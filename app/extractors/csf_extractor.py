@@ -1,18 +1,20 @@
 import re
 
 from app.extractors.base_extractor import BaseExtractor
+from app.extractors.extraction_context import ExtractionContext
 
 
 class CsfExtractor(BaseExtractor):
     """Extractor for Constancia de Situación Fiscal (CSF) documents."""
 
-    def extract(self, text: str, requested_fields: list[str]) -> dict:
+    def extract(self, text: str, requested_fields: list[str], context: ExtractionContext | None = None) -> dict:
         """
         Extract CSF fields from raw text.
 
         Args:
             text (str): Raw text extracted from PDF.
             requested_fields (list[str]): Fields requested by client.
+            context (ExtractionContext, optional): Ignored — regex extraction only needs the text.
 
         Returns:
             dict: Extracted CSF fields in snake_case.
@@ -78,7 +80,6 @@ class CsfExtractor(BaseExtractor):
 
     def _extract_tax_regimes(self, text: str) -> list[str]:
         # Matches regime name before date pattern
-        matches = re.findall(r'([\w\s\u00C0-\u024F]+)\n\d{2}/\d{2}/\d{4}(?:\n\d{2}/\d{2}/\d{4})?(?:\n|$)', text)
         regimes_section = re.search(r'Reg[íi]menes:(.*?)(?:Sus datos|$)', text, re.DOTALL)
         if not regimes_section:
             return []

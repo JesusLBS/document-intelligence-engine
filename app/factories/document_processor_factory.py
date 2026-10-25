@@ -22,7 +22,7 @@ class DocumentProcessorFactory:
             DocumentProcessorInterface: Concrete processor instance.
 
         Raises:
-            ValueError: If no processor is registered for the file type.
+            ProcessorNotFoundException: If no processor is registered for the file type (422).
         """
         processor_class = PROCESSOR_MAP.get(file_type.lower())
 
