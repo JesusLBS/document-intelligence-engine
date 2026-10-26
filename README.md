@@ -29,6 +29,7 @@ Casos de uso actuales:
 - **Pipeline PDF inteligente**: PyMuPDF diagnostica densidad de texto y decide entre extracción embebida u OCR.
 - **OCR**: páginas rasterizadas a 400 DPI y recortadas a la zona con contenido (a color, sin gris), Tesseract con modo de texto disperso como respaldo, y corrección por posición de errores típicos del OCR en CURP y clave de elector.
 - **IA intercambiable**: `AiExtractor` con providers Gemini (PDF de las páginas pedidas + texto) y Groq (solo texto).
+- **Validación de negocio**: reglas deterministas por tipo de documento (INE: vigencia en hora de México, dígito verificador del CURP, CURP vs fecha de nacimiento y clave de elector); la IA solo reporta observaciones ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)).
 - **Validación de entrada**: Marshmallow schemas, excepciones centralizadas, logging estructurado.
 - **Contenedorización y CI**: Docker + nginx como reverse proxy; GitHub Actions corre pytest en cada PR.
 
@@ -115,15 +116,17 @@ document-intelligence-engine/
 │   │   ├── pdf/             # PdfProcessor (diagnóstico, páginas del rango), page_renderer (render + recorte)
 │   │   └── image/ excel/ csv/ word/   # puntos de extensión vacíos (extensiones posibles, ver PROJECT_PLAN)
 │   ├── routes/              # Blueprint /api/v1
+│   ├── rules/               # Reglas de negocio por tipo de documento (registry, validation_engine)
 │   ├── schemas/             # Schemas marshmallow
 │   ├── services/            # DocumentService (orquestador)
-│   ├── utils/               # curp_decoder, case_converter, id_normalizer (CURP/clave), date_normalizer (ISO)
+│   ├── utils/               # curp_decoder, case_converter, id_normalizer (CURP/clave, dígito verificador), date_normalizer (ISO)
 │   └── validators/          # Validación de request (decorador)
 ├── tests/                   # pytest (incluye los hooks de Claude Code)
 ├── docs/
 │   ├── project/             # PROJECT_PLAN.md (diseño y roadmap), STATUS.md (estado)
 │   ├── screenshots/         # Capturas de Postman usadas en este README
 │   ├── AI_WORKFLOW.md       # Cómo se desarrolla con IA (y AI_WORKFLOW.en.md)
+│   ├── decisions/           # Decisiones de arquitectura (ADR)
 │   └── README.en.md         # Este README en inglés
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
@@ -356,13 +359,38 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
       "nombre": "JUAN",
       "apellidoPaterno": "PEREZ",
       "apellidoMaterno": "LOPEZ",
-      "curp": "XAXX010101HDFAAA09",
-      "claveElector": "PRPLJN01010109H000"
+      "curp": "PELJ900515HDFRPN07",
+      "fechaNacimiento": "1990-05-15",
+      "fechaVencimiento": "2031",
+      "claveElector": "PRLPJN90051509H000",
+      "documentoDetectado": "ine"
+    },
+    "validation": {
+      "valid": true,
+      "checkedOn": "2026-10-25",
+      "summary": { "passed": 8, "failed": 0, "warnings": 0, "skipped": 0 },
+      "rules": [
+        { "code": "ine.not_expired", "status": "passed", "severity": "error",
+          "message": "Valid through December 31 of its expiration year (checked on 2026-10-25).",
+          "fields": ["fechaVencimiento"] },
+        { "code": "ine.curp_matches_birth_date", "status": "passed", "severity": "error",
+          "message": "The CURP birth date matches fechaNacimiento.", "fields": ["curp", "fechaNacimiento"] }
+      ]
+    },
+    "verdict": {
+      "status": "valid",
+      "documentType": "ine",
+      "message": "The ine document is valid: every rule passed.",
+      "failedRules": [],
+      "warnings": []
     },
     "text": null
   }
 }
 ```
+
+**Validación de negocio (`validation`).** Con los campos por defecto, la respuesta incluye el veredicto de reglas deterministas de la app: la IA extrae y reporta lo que ve (`documentoDetectado`), las reglas deciden ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)). Reglas de la INE: campos requeridos, documento detectado, estructura y dígito verificador del CURP, estructura de la clave de elector, vigencia (contra la fecha de hoy en hora de México, `TZ`), CURP vs fecha de nacimiento, clave de elector vs CURP e iniciales del nombre (warning). La respuesta sigue siendo `200`. **`verdict.status`** es la respuesta global: `valid`, `invalid` (falló una regla de fondo), `incomplete` (solo faltan datos: no se puede confirmar ni rechazar) o `not_validated` (con `fields` personalizados o tipos sin reglas todavía, como CSF y comprobante; en esos casos `validation` es `null`).
+
 
 #### Ejemplo comprobante de domicilio (ai)
 
