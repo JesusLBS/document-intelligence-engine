@@ -249,3 +249,64 @@ class TestDebugSnapshot:
         process_with(DocumentReadingExtractor(), monkeypatch, request_id="req-no-debug")
 
         assert list(tmp_path.iterdir()) == []
+
+
+VALID_INE_FIELDS = {
+    "nombre": "JUAN", "apellido_paterno": "PEREZ", "apellido_materno": "LOPEZ", "curp": "PELJ900515HDFRPN07",
+    "fecha_nacimiento": "15/05/1990", "fecha_vencimiento": "2021-2031", "clave_elector": "PRLPJN90051509H000",
+    "documento_detectado": "ine",
+}
+
+
+def process_ine(make_pdf, monkeypatch, requested_fields: list) -> dict:
+    from app.services import document_service
+
+    class IneExtractor:
+        accepts_document_file = False
+
+        def extract(self, text, requested_fields, context=None):
+            return dict(VALID_INE_FIELDS)
+
+    monkeypatch.setattr(document_service.ExtractorFactory, "make", staticmethod(lambda *a, **k: IneExtractor()))
+    return DocumentService().process(
+        file=FileStorage(stream=io.BytesIO(make_pdf("Embedded text " * 20)), filename="ine.pdf"),
+        document_type="ine",
+        requested_fields=requested_fields,
+    )
+
+
+class TestBusinessValidation:
+    """Rules run on normalized fields after a full extraction (docs/decisions/0001)."""
+
+    def test_full_extraction_is_validated_after_normalization(self, make_pdf, monkeypatch):
+        result = process_ine(make_pdf, monkeypatch, requested_fields=[])
+
+        # Printed formats were normalized before the rules ran, so the date rules could compare them.
+        assert result["extractedFields"]["fechaNacimiento"] == "1990-05-15"
+        assert result["extractedFields"]["fechaVencimiento"] == "2031"
+        assert result["validation"]["valid"] is True
+        assert result["validation"]["summary"]["failed"] == 0
+
+    def test_custom_fields_are_not_validated(self, make_pdf, monkeypatch):
+        result = process_ine(make_pdf, monkeypatch, requested_fields=["curp"])
+
+        assert result["validation"] is None
+        assert result["verdict"]["status"] == "not_validated"
+        assert "custom fields" in result["verdict"]["message"]
+
+    def test_full_extraction_returns_a_global_verdict(self, make_pdf, monkeypatch):
+        result = process_ine(make_pdf, monkeypatch, requested_fields=[])
+
+        assert result["verdict"]["status"] == "valid"
+        assert result["verdict"]["documentType"] == "ine"
+
+    def test_homoclave_o_from_ocr_no_longer_fails_the_birth_date_rule(self, make_pdf, monkeypatch):
+        # Real INE case (2026-10-25), fictitious data: "O" for "0" at CURP position 17 passed the
+        # check digit but contradicted the 1990 birth date; the app resolves it from the birth date.
+        VALID_INE_FIELDS_WITH_O = {**VALID_INE_FIELDS, "curp": "PELJ900515HDFRPNO7"}
+        monkeypatch.setitem(globals(), "VALID_INE_FIELDS", VALID_INE_FIELDS_WITH_O)
+
+        result = process_ine(make_pdf, monkeypatch, requested_fields=[])
+
+        assert result["extractedFields"]["curp"] == "PELJ900515HDFRPN07"
+        assert result["verdict"]["status"] == "valid"

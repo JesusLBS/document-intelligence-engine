@@ -31,3 +31,16 @@ class TestFieldDefinitions:
         descriptions = Config.DOCUMENT_FIELD_DESCRIPTIONS["comprobante_domicilio"]
 
         assert set(Config.DOCUMENT_DEFAULT_FIELDS["comprobante_domicilio"]) == set(descriptions)
+
+
+class TestIneFieldDefinitions:
+    def test_every_ine_default_field_is_described(self):
+        descriptions = Config.DOCUMENT_FIELD_DESCRIPTIONS["ine"]
+
+        assert set(Config.DOCUMENT_DEFAULT_FIELDS["ine"]) == set(descriptions)
+
+    def test_dates_are_requested_as_printed_and_the_observation_is_explained(self):
+        prompt = build_prompt("ine", Config.DOCUMENT_DEFAULT_FIELDS["ine"])
+
+        assert "- fecha_vencimiento: VIGENCIA exactly as printed" in prompt
+        assert "- documento_detectado: which document the file actually is" in prompt

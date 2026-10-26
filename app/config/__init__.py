@@ -56,7 +56,10 @@ class Config:
 
     # Document default fields per type
     DOCUMENT_DEFAULT_FIELDS: dict = {
-        "ine": ["nombre", "apellido_materno", "apellido_paterno", "curp", "fecha_nacimiento", "fecha_vencimiento", "clave_elector"],
+        "ine": [
+            "nombre", "apellido_materno", "apellido_paterno", "curp", "fecha_nacimiento", "fecha_vencimiento",
+            "clave_elector", "documento_detectado",
+        ],
         "csf": ["rfc", "curp", "full_name", "padron_status", "tax_regimes"],
         "comprobante_domicilio": [
             "nombre_titular", "domicilio_completo", "calle", "numero_exterior", "numero_interior", "colonia",
@@ -69,6 +72,19 @@ class Config:
     # Dates are requested as printed and converted to ISO by the app (app/utils/date_normalizer.py, day first):
     # asked for ISO, a provider read 05/10/2026 month first and returned 2026-05-10, which the app can't detect.
     DOCUMENT_FIELD_DESCRIPTIONS: dict = {
+        "ine": {
+            "nombre": "given name(s) as printed (NOMBRE), without the surnames",
+            "apellido_paterno": "first surname",
+            "apellido_materno": "second surname, or null if the card shows only one",
+            # Copied even when it looks malformed: OCR text often has one O/0 swap, which the app fixes
+            # (id_normalizer); asked for a strict "18 characters", Groq returned null on 2 of 5 runs.
+            "curp": "CURP (18 characters), copied as printed even if some characters look wrong; the app corrects OCR errors",
+            "fecha_nacimiento": "date of birth (FECHA DE NACIMIENTO), exactly as printed",
+            "fecha_vencimiento": "VIGENCIA exactly as printed (e.g. '2021-2031' or '2031')",
+            "clave_elector": "CLAVE DE ELECTOR (18 characters), copied as printed even if some characters look wrong",
+            # Observation, not a verdict (docs/decisions/0001): a rule compares it with the requested type.
+            "documento_detectado": "which document the file actually is: ine, csf, comprobante_domicilio or otro",
+        },
         "comprobante_domicilio": {
             "nombre_titular": "name of the account holder the bill is addressed to, as printed",
             "domicilio_completo": "full service address in one line: street, number, colonia, municipio, state and postal code",

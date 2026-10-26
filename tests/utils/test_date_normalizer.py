@@ -43,3 +43,24 @@ class TestNormalizeDates:
             "numero_servicio": "05/10/2026",
             "periodo_fin": None,
         }
+
+
+class TestIneDates:
+    """INE: birth date to ISO, VIGENCIA to its expiration year (format step before the rules)."""
+
+    @pytest.mark.parametrize("printed, expected", [("15/05/1990", "1990-05-15"), ("1990-05-15", "1990-05-15")])
+    def test_birth_date_becomes_iso(self, printed, expected):
+        assert normalize_dates({"fecha_nacimiento": printed}) == {"fecha_nacimiento": expected}
+
+    @pytest.mark.parametrize("printed, expected", [
+        ("2021-2031", "2031"),
+        ("2021 - 2031", "2031"),
+        ("VIGENCIA 2031", "2031"),
+        ("2031", "2031"),
+    ])
+    def test_expiration_becomes_its_last_year(self, printed, expected):
+        assert normalize_dates({"fecha_vencimiento": printed}) == {"fecha_vencimiento": expected}
+
+    @pytest.mark.parametrize("value", ["VIGENTE", "2019 2021 2031", None])
+    def test_unreadable_expiration_is_left_alone(self, value):
+        assert normalize_dates({"fecha_vencimiento": value}) == {"fecha_vencimiento": value}
