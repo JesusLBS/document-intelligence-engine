@@ -1,3 +1,4 @@
+import pytest
 import io
 import os
 
@@ -35,6 +36,8 @@ class RecordingExtractor:
     """Captures exactly what the service passes to the extractor."""
 
     accepts_document_file = False
+
+    wants_page_ocr = False
 
     def __init__(self):
         self.calls = []
@@ -80,6 +83,7 @@ class TestIdentifierNormalization:
 
         class OcrConfusedExtractor:
             accepts_document_file = False
+            wants_page_ocr = False
 
             def extract(self, text, requested_fields, context=None):
                 return {"curp": "XAXXO1O1O1HDFAAA09"}
@@ -108,6 +112,7 @@ class StrategyRecorder:
 
         class Extractor:
             accepts_document_file = False
+            wants_page_ocr = False
 
             def extract(self, text, requested_fields, context=None):
                 return dict(fields)
@@ -148,6 +153,8 @@ class DocumentReadingExtractor:
     """Stands in for Gemini: reads the document file; records what it received."""
 
     accepts_document_file = True
+
+    wants_page_ocr = False
 
     def __init__(self):
         self.received = None
@@ -233,7 +240,7 @@ class TestDebugSnapshot:
         folder = tmp_path / "req-debug"
         assert sorted(p.name for p in folder.iterdir()) == [
             "extractor_text.txt", "original.pdf", "page_2.png", "page_3.png",
-            "request.json", "result.json", "sent_to_ai.pdf",
+            "request.json", "result.json", "sent_to_ai.pdf", "validation.json",
         ]
         request = json.loads((folder / "request.json").read_text())
         assert request["processing_method"] == "text_extraction"
@@ -263,6 +270,7 @@ def process_ine(make_pdf, monkeypatch, requested_fields: list) -> dict:
 
     class IneExtractor:
         accepts_document_file = False
+        wants_page_ocr = False
 
         def extract(self, text, requested_fields, context=None):
             return dict(VALID_INE_FIELDS)
@@ -310,3 +318,85 @@ class TestBusinessValidation:
 
         assert result["extractedFields"]["curp"] == "PELJ900515HDFRPN07"
         assert result["verdict"]["status"] == "valid"
+
+
+class TextOnlyAiExtractor:
+    """Stands in for Groq: reads text only, so a digital PDF's text is supplemented with OCR."""
+
+    accepts_document_file = False
+    wants_page_ocr = True
+
+    def __init__(self):
+        self.text = None
+
+    def extract(self, text, requested_fields, context=None):
+        self.text = text
+        return {}
+
+
+class TestOcrSupplement:
+    """CFE bills draw dates as graphics: a text-only AI also gets the OCR of the pages."""
+
+    @pytest.fixture
+    def fake_ocr(self, monkeypatch):
+        from PIL import Image
+
+        from app.processors.pdf.pdf_processor import PdfProcessor
+        from app.services import document_service
+
+        calls = []
+        monkeypatch.setattr(PdfProcessor, "render_pages",
+                            lambda self, path, from_page=None, to_page=None: [Image.new("RGB", (10, 10))])
+
+        def extract_text(self, pages):
+            calls.append(len(pages))
+            return "PERIODO FACTURADO 12 AGO 26 - 13 OCT 26"
+
+        monkeypatch.setattr(document_service.TesseractOcr, "extract_text", extract_text)
+        return calls
+
+    def process(self, make_pdf, monkeypatch, extractor, force_ocr: bool = False) -> dict:
+        from app.services import document_service
+
+        monkeypatch.setattr(document_service.ExtractorFactory, "make", staticmethod(lambda *a, **k: extractor))
+        return DocumentService().process(
+            file=FileStorage(stream=io.BytesIO(make_pdf("Embedded text " * 20)), filename="bill.pdf"),
+            document_type="comprobante_domicilio",
+            requested_fields=[],
+            force_ocr=force_ocr,
+        )
+
+    def test_text_only_ai_gets_embedded_text_plus_page_ocr(self, make_pdf, monkeypatch, fake_ocr):
+        from app.services.document_service import OCR_SUPPLEMENT_HEADER
+
+        extractor = TextOnlyAiExtractor()
+        result = self.process(make_pdf, monkeypatch, extractor)
+
+        assert extractor.text.startswith("Embedded text")
+        assert OCR_SUPPLEMENT_HEADER in extractor.text
+        assert extractor.text.endswith("PERIODO FACTURADO 12 AGO 26 - 13 OCT 26")
+        assert result["ocrSupplement"] is True
+        assert result["processingMethod"] == "text_extraction"
+        assert fake_ocr == [1]
+
+    def test_regex_and_document_readers_get_no_supplement(self, make_pdf, monkeypatch, fake_ocr):
+        result = self.process(make_pdf, monkeypatch, RecordingExtractor())
+
+        assert result["ocrSupplement"] is False
+        assert fake_ocr == []
+
+    def test_scanned_pdf_is_not_ocred_twice(self, make_pdf, monkeypatch, fake_ocr):
+        extractor = TextOnlyAiExtractor()
+        result = self.process(make_pdf, monkeypatch, extractor, force_ocr=True)  # OCR path: no supplement on top
+
+        assert result["processingMethod"] == "ocr"
+        assert result["ocrSupplement"] is False
+        assert fake_ocr == [1]
+
+
+class TestProvidersWantPageOcr:
+    def test_groq_wants_it_and_gemini_does_not(self):
+        from app.extractors.ai_extractor import AiExtractor
+
+        assert AiExtractor(provider="groq").wants_page_ocr is True
+        assert AiExtractor(provider="gemini").wants_page_ocr is False

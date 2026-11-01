@@ -17,6 +17,10 @@ from app.utils.id_normalizer import (
 from app.extractors.extraction_context import ExtractionContext
 
 
+# Separates the embedded text from the OCR of the page images when both go to a text-only AI.
+OCR_SUPPLEMENT_HEADER = "--- Text recognized from the page images (OCR, may contain character errors) ---"
+
+
 class DocumentService:
     """Orchestrates document processing flow."""
 
@@ -70,14 +74,23 @@ class DocumentService:
             needs_ocr = force_ocr or processor_result.get("processingMethod") == "ocr_required"
             processor_result["ocrRequired"] = needs_ocr
 
+            extractor = ExtractorFactory.make(document_type, extractor_strategy=strategy, ai_provider=provider)
+
+            # A text-only AI (Groq) on a digital PDF also gets the OCR of the pages: the embedded text
+            # can miss what the PDF draws as graphics (a real CFE bill had no date at all in it).
+            supplement_ocr = not needs_ocr and extractor.wants_page_ocr
+            processor_result["ocrSupplement"] = supplement_ocr
+
             # Pages are rendered once, only for the requested range, and only when something uses them.
-            pages = processor.render_pages(file_path, from_page, to_page) if needs_ocr or debug_mode else []
+            render = needs_ocr or supplement_ocr or debug_mode
+            pages = processor.render_pages(file_path, from_page, to_page) if render else []
 
             if needs_ocr:
                 processor_result["text"] = TesseractOcr().extract_text(pages)
                 processor_result["processingMethod"] = "ocr"
-
-            extractor = ExtractorFactory.make(document_type, extractor_strategy=strategy, ai_provider=provider)
+            elif supplement_ocr:
+                embedded = processor_result.get("text") or ""
+                processor_result["text"] = f"{embedded}\n\n{OCR_SUPPLEMENT_HEADER}\n{TesseractOcr().extract_text(pages)}"
 
             # Providers that read documents (Gemini) get the file itself, cut to the requested pages,
             # whether it is digital or scanned; text-only extractors (Groq, regex) get the text.
@@ -123,6 +136,7 @@ class DocumentService:
                     "pages": {"total": processor_result.get("pages"), "processed": processor_result["processedPages"]},
                     "force_ocr": force_ocr,
                     "processing_method": processor_result["processingMethod"],
+                    "ocr_supplement": supplement_ocr,
                     "diagnosis": diagnosis,
                     "sent_to_extractor": {
                         "text_chars": len(raw_text.strip()),

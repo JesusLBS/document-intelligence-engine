@@ -214,7 +214,7 @@ class TestPrivacyAndRegistry:
         assert all(code.startswith("ine.") for code in codes)
 
     def test_types_without_rules_return_none(self):
-        assert validate("comprobante_domicilio", {"proveedor": "X"}, today=TODAY) is None
+        assert validate("unknown_type", {"proveedor": "X"}, today=TODAY) is None
 
 
 class TestVerdict:

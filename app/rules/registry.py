@@ -1,4 +1,7 @@
-from app.rules.common_rules import DocumentDetected, MaxAge, NotExpired, OnlyForPersonaFisica, RequiredFields
+from app.rules.address_proof_rules import PeriodConsistent, PostalCodeFormat, ServiceTypeKnown
+from app.rules.common_rules import (
+    DocumentDetected, MaxAge, NotExpired, OnlyForPersonaFisica, RequiredAnyOf, RequiredFields,
+)
 from app.rules.csf_rules import PadronActive, RfcCheckDigit, RfcFormat, RfcMatchesCurp, RfcNotGeneric
 from app.rules.ine_rules import ClaveElectorFormat, ClaveMatchesCurp, CurpFormat, CurpMatchesBirthDate, NamesMatchCurp
 
@@ -31,5 +34,17 @@ RULES_BY_DOCUMENT_TYPE = {
         OnlyForPersonaFisica(RfcMatchesCurp()),
         PadronActive(),
         MaxAge("csf.max_age", date_fields=("issued_at",), months=3),
+    ],
+    # Age from the issue date, falling back to the billed period end (CFE bills print no issue
+    # date). The payment due date is not a fallback: it is later than the period and would
+    # accept older bills. Exterior/interior number, municipio and estado are optional.
+    "comprobante_domicilio": [
+        RequiredFields("comprobante.required_fields", ("nombre_titular", "calle", "colonia", "codigo_postal", "proveedor")),
+        RequiredAnyOf("comprobante.date_present", ("fecha_emision", "periodo_fin")),
+        DocumentDetected("comprobante.document_detected", expected="comprobante_domicilio"),
+        PostalCodeFormat(),
+        MaxAge("comprobante.max_age", date_fields=("fecha_emision", "periodo_fin"), months=3),
+        ServiceTypeKnown(),
+        PeriodConsistent(),
     ],
 }
