@@ -131,7 +131,7 @@ document-intelligence-engine/
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
 ├── scripts/                 # up, verify, smoke, doctor, check_extraction (los llama el Makefile) y generate_samples.py
-├── samples/                 # pdf/: INE pública y comprobantes ficticios · expected/: referencias de make check-extraction
+├── samples/                 # pdf/: INE pública, comprobantes y CSF ficticios · expected/: referencias de make check-extraction
 ├── storage/                 # debug/, logs/ (generados en runtime, ignorados por git)
 ├── uploads/                 # Uploads temporales (ignorados por git)
 ├── .github/workflows/       # CI (pytest)
@@ -389,7 +389,7 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
 }
 ```
 
-**Validación de negocio (`validation`).** Con los campos por defecto, la respuesta incluye el veredicto de reglas deterministas de la app: la IA extrae y reporta lo que ve (`documentoDetectado`), las reglas deciden ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)). Reglas de la INE: campos requeridos, documento detectado, estructura y dígito verificador del CURP, estructura de la clave de elector, vigencia (contra la fecha de hoy en hora de México, `TZ`), CURP vs fecha de nacimiento, clave de elector vs CURP e iniciales del nombre (warning). La respuesta sigue siendo `200`. **`verdict.status`** es la respuesta global: `valid`, `invalid` (falló una regla de fondo), `incomplete` (solo faltan datos: no se puede confirmar ni rechazar) o `not_validated` (con `fields` personalizados o tipos sin reglas todavía, como CSF y comprobante; en esos casos `validation` es `null`).
+**Validación de negocio (`validation`).** Con los campos por defecto, la respuesta incluye el veredicto de reglas deterministas de la app: la IA extrae y reporta lo que ve (`documentoDetectado`), las reglas deciden ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)). Reglas de la INE: campos requeridos, documento detectado, estructura y dígito verificador del CURP, estructura de la clave de elector, vigencia (contra la fecha de hoy en hora de México, `TZ`), CURP vs fecha de nacimiento, clave de elector vs CURP e iniciales del nombre (warning). Reglas de la CSF (persona física y moral; `tipoPersona` lo calcula la app por la longitud del RFC): campos requeridos, documento detectado, estructura del RFC, dígito verificador del RFC (warning), RFC no genérico, CURP y RFC vs CURP (solo persona física), estatus `ACTIVO` en el padrón y antigüedad máxima de 3 meses. Funcionan igual con `extractor=regex` y con IA. La respuesta sigue siendo `200`. **`verdict.status`** es la respuesta global: `valid`, `invalid` (falló una regla de fondo), `incomplete` (solo faltan datos: no se puede confirmar ni rechazar) o `not_validated` (con `fields` personalizados o tipos sin reglas todavía, como el comprobante; en esos casos `validation` es `null`).
 
 
 #### Ejemplo comprobante de domicilio (ai)

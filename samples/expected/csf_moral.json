@@ -1,0 +1,17 @@
+{
+  "sample": "csf_moral_sample.pdf",
+  "document_type": "csf",
+  "request": {
+    "extractor": "ai"
+  },
+  "note": "Synthetic CSF, persona moral (12-character RFC, no CURP). Checked through the AI path.",
+  "fields": {
+    "rfc": "ABC200101XY3",
+    "curp": null,
+    "full_name": "EMPRESA EJEMPLO SA DE CV",
+    "padron_status": "ACTIVO",
+    "issued_at": "2026-10-30",
+    "documento_detectado": "csf",
+    "tipo_persona": "moral"
+  }
+}

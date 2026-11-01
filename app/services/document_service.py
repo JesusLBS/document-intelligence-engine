@@ -11,7 +11,9 @@ from app.rules.validation_engine import build_verdict, validate
 from app.ocr.tesseract_ocr import TesseractOcr
 from app.utils.case_converter import dict_to_camel_case
 from app.utils.date_normalizer import normalize_dates
-from app.utils.id_normalizer import normalize_identifiers, recover_identifiers, resolve_curp_century
+from app.utils.id_normalizer import (
+    derive_tipo_persona, normalize_identifiers, recover_identifiers, resolve_curp_century,
+)
 from app.extractors.extraction_context import ExtractionContext
 
 
@@ -138,6 +140,8 @@ class DocumentService:
             extracted = normalize_dates(extracted)
             # Needs the ISO birth date: an O/0 swap in the CURP homoclave is invisible to its check digit.
             extracted = resolve_curp_century(extracted)
+            # CSF: persona física or moral, from the RFC length (deterministic, never asked to the AI).
+            extracted = derive_tipo_persona(extracted)
 
             # Business rules (docs/decisions/0001): only on a full extraction. With a custom `fields`
             # list the document as a whole cannot be judged, so validation is null.

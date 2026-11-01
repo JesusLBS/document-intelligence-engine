@@ -123,3 +123,28 @@ class TestCsfExtractor:
         result = extractor.extract("texto sin nada relevante", [])
         assert result["rfc"] is None
         assert result["curp"] is None
+
+class TestCsfObservationAndDate:
+    """Fields the CSF rules need, produced by the regex extractor too."""
+
+    def test_heading_is_reported_as_csf(self):
+        assert CsfExtractor().extract(SAMPLE_CSF_TEXT, ["documento_detectado"]) == {"documento_detectado": "csf"}
+
+    def test_text_without_the_heading_is_reported_as_otro(self):
+        assert CsfExtractor().extract("RECIBO DE LUZ", ["documento_detectado"]) == {"documento_detectado": "otro"}
+
+    def test_issue_date_is_returned_as_printed_for_the_normalizer(self):
+        from app.utils.date_normalizer import normalize_dates
+
+        printed = CsfExtractor().extract(SAMPLE_CSF_TEXT, ["issued_at"])
+
+        assert printed == {"issued_at": "15 DE MAYO DE 2025"}
+        assert normalize_dates(printed) == {"issued_at": "2025-05-15"}
+
+    def test_persona_moral_company_name_is_extracted(self):
+        text = "CONSTANCIA DE SITUACIÓN FISCAL\nRFC:\nABC200101XY3\nDenominación/Razón Social:\nEMPRESA EJEMPLO S.A. DE C.V.\n"
+
+        assert CsfExtractor().extract(text, ["full_name", "curp"]) == {
+            "full_name": "EMPRESA EJEMPLO S.A. DE C.V.",
+            "curp": None,
+        }

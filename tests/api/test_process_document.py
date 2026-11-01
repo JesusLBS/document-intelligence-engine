@@ -173,6 +173,47 @@ class TestProcessPipeline:
         assert data["extractedFields"]["curp"] == "XAXX010101HDFAAA09"
 
 
+class TestCsfValidationEndToEnd:
+    """CSF through the real API with the regex extractor: tipoPersona, ISO issue date, rules and verdict."""
+
+    def test_regex_csf_is_validated(self, client, make_pdf, upload, monkeypatch):
+        from datetime import date
+
+        from app.rules import validation_engine
+
+        # The sample CSF was issued on 2025-05-15: judged on 2025-06-01 it is within 3 months.
+        monkeypatch.setattr(validation_engine, "local_today", lambda: date(2025, 6, 1))
+
+        response = client.post(ENDPOINT, data={
+            "file": upload(make_pdf(SAMPLE_CSF_TEXT)),
+            "document_type": "csf",
+            "include_raw_text": "false",
+        })
+
+        data = response.get_json()["data"]
+        assert data["extractedFields"]["tipoPersona"] == "fisica"
+        assert data["extractedFields"]["issuedAt"] == "2025-05-15"
+        assert data["extractedFields"]["documentoDetectado"] == "csf"
+        statuses = {rule["code"]: rule["status"] for rule in data["validation"]["rules"]}
+        assert statuses["csf.max_age"] == "passed"
+        assert statuses["csf.padron_active"] == "passed"
+        assert statuses["csf.rfc_matches_curp"] == "passed"
+        assert data["verdict"]["documentType"] == "csf"
+
+    def test_same_csf_months_later_is_too_old(self, client, make_pdf, upload, monkeypatch):
+        from datetime import date
+
+        from app.rules import validation_engine
+
+        monkeypatch.setattr(validation_engine, "local_today", lambda: date(2026, 10, 31))
+
+        response = client.post(ENDPOINT, data={"file": upload(make_pdf(SAMPLE_CSF_TEXT)), "document_type": "csf"})
+
+        verdict = response.get_json()["data"]["verdict"]
+        assert verdict["status"] == "invalid"
+        assert "csf.max_age" in verdict["failedRules"]
+
+
 class FailingAiService:
     """Simulates a provider failure surfacing from the service layer."""
 

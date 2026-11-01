@@ -1,9 +1,11 @@
+import calendar
 import re
 from datetime import date
 
 from app.rules.base_rule import Rule, is_empty
-from app.rules.rule_result import RuleResult, failed, passed
+from app.rules.rule_result import RuleResult, failed, passed, skipped
 from app.utils.case_converter import to_camel_case
+from app.utils.id_normalizer import PERSONA_MORAL
 
 
 class RequiredFields(Rule):
@@ -73,3 +75,95 @@ class DocumentDetected(Rule):
         if detected != self.expected:
             return failed(f"The file does not look like the requested document type ({self.expected}).")
         return passed(f"The file looks like the requested document type ({self.expected}).")
+
+
+def months_before(day: date, months: int) -> date:
+    """
+    The same calendar day `months` earlier, clamped to the month's last day (May 31 - 3 months = Feb 28/29).
+
+    Args:
+        day (date): Reference date.
+        months (int): Months to go back.
+
+    Returns:
+        date: The earlier date.
+    """
+    year, month_zero_based = divmod(day.year * 12 + day.month - 1 - months, 12)
+    month = month_zero_based + 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
+class MaxAge(Rule):
+    """
+    A document date (ISO) is at most `months` old and not in the future, on Config.TZ's calendar.
+
+    `date_fields` is tried in order: the first present one is used (the comprobante prints no issue
+    date on CFE bills, so it will fall back to the billed period end).
+    """
+
+    def __init__(self, code: str, date_fields: tuple[str, ...], months: int):
+        """
+        Args:
+            code (str): Stable rule code (e.g. 'csf.max_age').
+            date_fields (tuple[str, ...]): Candidate date fields, already normalized to YYYY-MM-DD.
+            months (int): Maximum age in calendar months.
+        """
+        self.code = code
+        self.date_fields = date_fields
+        self.months = months
+
+    def evaluate(self, fields: dict, today: date) -> dict:
+        entry = super().evaluate(fields, today)
+        # Report the field actually used (or every candidate when none was present).
+        used = next((name for name in self.date_fields if not is_empty(fields.get(name))), None)
+        entry["fields"] = [to_camel_case(name) for name in ((used,) if used else self.date_fields)]
+        return entry
+
+    def check(self, fields: dict, today: date) -> RuleResult:
+        name = next((name for name in self.date_fields if not is_empty(fields.get(name))), None)
+        if name is None:
+            return skipped(f"Skipped: missing {', '.join(to_camel_case(n) for n in self.date_fields)}.")
+        try:
+            document_date = date.fromisoformat(str(fields[name]).strip())
+        except ValueError:
+            return failed(f"{to_camel_case(name)} is not a date (YYYY-MM-DD).")
+
+        oldest = months_before(today, self.months)
+        if document_date > today:
+            return failed(f"{to_camel_case(name)} is in the future (checked on {today.isoformat()}).")
+        if document_date < oldest:
+            return failed(f"The document is older than {self.months} months: issued before {oldest.isoformat()}.")
+        return passed(f"Issued within the last {self.months} months (on or after {oldest.isoformat()}).")
+
+
+class OnlyForPersonaFisica(Rule):
+    """
+    Wraps a rule that only applies to a persona física (e.g. CURP rules on a CSF).
+
+    For a persona moral the wrapped rule is reported as skipped ("not applicable"), never failed.
+    """
+
+    def __init__(self, rule: Rule):
+        """
+        Args:
+            rule (Rule): The rule to run for a persona física.
+        """
+        self.rule = rule
+        self.code = rule.code
+        self.severity = rule.severity
+        self.inputs = rule.inputs
+        self.reports_missing_data = rule.reports_missing_data
+
+    def evaluate(self, fields: dict, today: date) -> dict:
+        if fields.get("tipo_persona") == PERSONA_MORAL:
+            return {
+                "code": self.code,
+                "status": "skipped",
+                "severity": self.severity,
+                "message": "Not applicable to a persona moral.",
+                "fields": [to_camel_case(name) for name in self.inputs],
+            }
+        return self.rule.evaluate(fields, today)
+
+    def check(self, fields: dict, today: date) -> RuleResult:
+        return self.rule.check(fields, today)

@@ -214,7 +214,7 @@ class TestPrivacyAndRegistry:
         assert all(code.startswith("ine.") for code in codes)
 
     def test_types_without_rules_return_none(self):
-        assert validate("csf", {"rfc": "XAXX010101AAA"}, today=TODAY) is None
+        assert validate("comprobante_domicilio", {"proveedor": "X"}, today=TODAY) is None
 
 
 class TestVerdict:
@@ -260,7 +260,7 @@ class TestVerdict:
     def test_not_validated_carries_the_reason(self):
         from app.rules.validation_engine import build_verdict
 
-        verdict = build_verdict("csf", None, "Not validated: no business rules for csf yet.")
+        verdict = build_verdict("comprobante_domicilio", None, "Not validated: no business rules for comprobante_domicilio yet.")
 
-        assert verdict == {"status": "not_validated", "documentType": "csf",
-                           "message": "Not validated: no business rules for csf yet.", "failedRules": [], "warnings": []}
+        assert verdict == {"status": "not_validated", "documentType": "comprobante_domicilio",
+                           "message": "Not validated: no business rules for comprobante_domicilio yet.", "failedRules": [], "warnings": []}

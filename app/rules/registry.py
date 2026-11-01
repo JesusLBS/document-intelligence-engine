@@ -1,4 +1,5 @@
-from app.rules.common_rules import DocumentDetected, NotExpired, RequiredFields
+from app.rules.common_rules import DocumentDetected, MaxAge, NotExpired, OnlyForPersonaFisica, RequiredFields
+from app.rules.csf_rules import PadronActive, RfcCheckDigit, RfcFormat, RfcMatchesCurp, RfcNotGeneric
 from app.rules.ine_rules import ClaveElectorFormat, ClaveMatchesCurp, CurpFormat, CurpMatchesBirthDate, NamesMatchCurp
 
 # Rules per document type, in report order. Adding or removing a rule is one line here (plus its
@@ -16,5 +17,19 @@ RULES_BY_DOCUMENT_TYPE = {
         CurpMatchesBirthDate(),
         ClaveMatchesCurp(),
         NamesMatchCurp(),
+    ],
+    # Persona física (13-character RFC, has a CURP) and moral (12, no CURP): CURP rules are
+    # "not applicable" for a moral. tipo_persona is derived from the RFC by the app.
+    "csf": [
+        RequiredFields("csf.required_fields", ("rfc", "full_name", "padron_status", "issued_at")),
+        DocumentDetected("csf.document_detected", expected="csf"),
+        RfcFormat(),
+        RfcCheckDigit(),
+        RfcNotGeneric(),
+        OnlyForPersonaFisica(RequiredFields("csf.curp_required", ("curp",))),
+        OnlyForPersonaFisica(CurpFormat("csf.curp_format")),
+        OnlyForPersonaFisica(RfcMatchesCurp()),
+        PadronActive(),
+        MaxAge("csf.max_age", date_fields=("issued_at",), months=3),
     ],
 }
