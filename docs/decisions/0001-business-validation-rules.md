@@ -101,7 +101,28 @@ Step 0 (format stabilization, before rules): INE field descriptions in `Config.D
 | `ine.clave_matches_curp` | error | Clave de elector birth date and sex = CURP birth date and sex |
 | `ine.names_match_curp` | warning | Name initials consistent with CURP positions 1, 3 and 4 (warning: CURP has legitimate exceptions) |
 
-CSF and comprobante de domicilio get their own tables in this ADR (or a follow-up ADR) when their turn comes; known inputs: CSF RFC/CURP consistency and `padron_status`; comprobante age ≤ 3 months using `fecha_emision`, falling back to `periodo_fin` (real CFE bills print no issue date).
+## Second rule set: CSF (2026-10-31)
+
+Decided with the developer: persona física **and** moral are supported; maximum age 3 months; the issue date in ISO like every other date.
+
+Step 0: `issued_at` and `documento_detectado` join the default fields (the regex extractor reports `csf` when the SAT heading "CONSTANCIA DE SITUACIÓN FISCAL" is present; the AI reports the same observation); CSF field descriptions in the prompt use the regex extractor's keys, so the rules work with either strategy; `issued_at` normalized to ISO. **`tipo_persona`** (`fisica` | `moral`) is derived by the app from the RFC length (13 / 12), never asked to the AI.
+
+| Code | Severity | Checks |
+|---|---|---|
+| `csf.required_fields` | error | rfc, full_name, padron_status, issued_at present |
+| `csf.document_detected` | error | The observation `documento_detectado` is a CSF |
+| `csf.rfc_format` | error | RFC structure for persona física (13) or moral (12) and a real date |
+| `csf.rfc_check_digit` | warning | RFC check digit. A warning: about 1.5% of RFCs in use carry an invalid one (python-stdnum disables this check by default) |
+| `csf.rfc_not_generic` | error | Not a generic RFC (XAXX010101000 general public, XEXX010101000 foreigners) |
+| `csf.curp_required` | error | Persona física: CURP present (counts as missing data for the verdict) |
+| `csf.curp_format` | error | Persona física: CURP structure and check digit |
+| `csf.rfc_matches_curp` | error | Persona física: RFC and CURP encode the same birth date |
+| `csf.padron_active` | error | Estatus en el padrón is ACTIVO |
+| `csf.max_age` | error | issued_at at most 3 calendar months before today (`Config.TZ`) and not in the future |
+
+The three persona física rules are wrapped in `OnlyForPersonaFisica`: for a persona moral they are reported as `skipped` with "Not applicable to a persona moral.", never failed. `MaxAge` takes a list of candidate date fields, so the comprobante can fall back from `fecha_emision` to `periodo_fin` (real CFE bills print no issue date).
+
+The comprobante de domicilio gets its table when its turn comes.
 
 ## Consequences
 

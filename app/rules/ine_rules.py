@@ -60,10 +60,16 @@ def _curp_initial(word: str | None) -> str:
 
 
 class CurpFormat(Rule):
-    """CURP structure, a real birth date and a correct check digit."""
+    """CURP structure, a real birth date and a correct check digit (INE and CSF)."""
 
-    code = "ine.curp_format"
     inputs = ("curp",)
+
+    def __init__(self, code: str = "ine.curp_format"):
+        """
+        Args:
+            code (str): Stable rule code ('ine.curp_format', 'csf.curp_format').
+        """
+        self.code = code
 
     def check(self, fields: dict, today: date) -> RuleResult:
         curp = str(fields["curp"]).strip().upper()

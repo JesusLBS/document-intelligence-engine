@@ -204,3 +204,28 @@ def resolve_curp_century(fields: dict) -> dict:
 
     Logger.info("CURP homoclave corrected from the birth date century", field="curp")
     return {**fields, "curp": fixed}
+
+
+PERSONA_FISICA = "fisica"
+PERSONA_MORAL = "moral"
+
+
+def derive_tipo_persona(fields: dict) -> dict:
+    """
+    Add `tipo_persona` from the RFC length: 13 characters is a persona física, 12 a persona moral.
+
+    Derived by the app, never asked to the AI: it is deterministic, so it cannot vary by provider.
+    Only added when the fields include an RFC.
+
+    Args:
+        fields (dict): Extracted fields in snake_case.
+
+    Returns:
+        dict: Same fields plus `tipo_persona` ('fisica', 'moral' or None when the RFC length is neither).
+    """
+    if "rfc" not in fields:
+        return fields
+
+    rfc = re.sub(r"[\s-]", "", fields["rfc"]).upper() if isinstance(fields["rfc"], str) else ""
+    tipo = {13: PERSONA_FISICA, 12: PERSONA_MORAL}.get(len(rfc))
+    return {**fields, "tipo_persona": tipo}

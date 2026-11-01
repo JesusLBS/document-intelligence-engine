@@ -131,7 +131,7 @@ document-intelligence-engine/
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
 ├── scripts/                 # up, verify, smoke, doctor, check_extraction (called by the Makefile) and generate_samples.py
-├── samples/                 # pdf/: public INE and fictitious address proofs · expected/: make check-extraction references
+├── samples/                 # pdf/: public INE, fictitious address proofs and CSF · expected/: make check-extraction references
 ├── storage/                 # debug/, logs/ (runtime, git-ignored)
 ├── uploads/                 # Temporary uploads (git-ignored)
 ├── .github/workflows/       # CI (pytest)
@@ -389,7 +389,7 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
 }
 ```
 
-**Business validation (`validation`).** With the default fields, the response includes the verdict of the app's deterministic rules: the AI extracts and reports what it sees (`documentoDetectado`), the rules decide ([ADR 0001](./decisions/0001-business-validation-rules.md)). INE rules: required fields, detected document, CURP structure and check digit, clave de elector structure, expiration (against today's date in Mexico's time zone, `TZ`), CURP vs birth date, clave de elector vs CURP and name initials (warning). The response stays `200`. **`verdict.status`** is the global answer: `valid`, `invalid` (a content rule failed), `incomplete` (only data is missing: it can be neither confirmed nor rejected) or `not_validated` (custom `fields` list or types without rules yet, such as CSF and comprobante; `validation` is `null` then).
+**Business validation (`validation`).** With the default fields, the response includes the verdict of the app's deterministic rules: the AI extracts and reports what it sees (`documentoDetectado`), the rules decide ([ADR 0001](./decisions/0001-business-validation-rules.md)). INE rules: required fields, detected document, CURP structure and check digit, clave de elector structure, expiration (against today's date in Mexico's time zone, `TZ`), CURP vs birth date, clave de elector vs CURP and name initials (warning). CSF rules (persona física and moral; the app derives `tipoPersona` from the RFC length): required fields, detected document, RFC structure, RFC check digit (warning), non-generic RFC, CURP and RFC vs CURP (persona física only), `ACTIVO` registry status and a maximum age of 3 months. They work the same with `extractor=regex` and with AI. The response stays `200`. **`verdict.status`** is the global answer: `valid`, `invalid` (a content rule failed), `incomplete` (only data is missing: it can be neither confirmed nor rejected) or `not_validated` (custom `fields` list or types without rules yet, such as the comprobante; `validation` is `null` then).
 
 
 #### Address proof example (ai)

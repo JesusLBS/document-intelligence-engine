@@ -1,0 +1,17 @@
+{
+  "sample": "csf_fisica_sample.pdf",
+  "document_type": "csf",
+  "request": {
+    "extractor": "ai"
+  },
+  "note": "Synthetic CSF, persona física. Checked through the AI path (the regex path is covered by tests). tax_regimes not compared: list formatting varies by provider.",
+  "fields": {
+    "rfc": "PELJ900515AB7",
+    "curp": "PELJ900515HDFRPN07",
+    "full_name": "JUAN PEREZ LOPEZ",
+    "padron_status": "ACTIVO",
+    "issued_at": "2026-10-30",
+    "documento_detectado": "csf",
+    "tipo_persona": "fisica"
+  }
+}

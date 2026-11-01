@@ -24,7 +24,11 @@ class TestFieldDefinitions:
             assert f"- {name}:" in prompt
 
     def test_types_without_descriptions_get_no_section(self):
-        assert "Field definitions" not in build_prompt("csf", ["rfc"])
+        assert "Field definitions" not in build_prompt("unknown_type", ["rfc"])
+
+    def test_every_csf_default_field_is_described(self):
+        # Same keys as the CSF regex extractor, so the rules work with either strategy.
+        assert set(Config.DOCUMENT_DEFAULT_FIELDS["csf"]) == set(Config.DOCUMENT_FIELD_DESCRIPTIONS["csf"])
 
     def test_default_fields_are_all_described(self):
         # Every default field of the comprobante must tell the AI its meaning and format.
