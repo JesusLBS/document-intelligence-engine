@@ -36,9 +36,9 @@ Evidence from this project behind the choice: Groq returned the same INE date as
 
 ```text
 app/rules/
-├── base_rule.py        # Rule (abstract): code, description, severity, check(fields, today) -> RuleResult
+├── base_rule.py        # Rule (abstract): code, severity, inputs, reports_missing_data, check(fields, today) -> RuleResult
 ├── rule_result.py      # RuleResult: status passed | failed | skipped, message, fields involved
-├── common_rules.py     # Reusable, parameterized: RequiredFields, NotExpired, MaxAge, DocumentDetected
+├── common_rules.py     # Reusable, parameterized: RequiredFields, RequiredAnyOf, NotExpired, MaxAge, DocumentDetected, OnlyForPersonaFisica
 ├── ine_rules.py        # INE-specific: CurpFormat (structure + check digit), CurpMatchesBirthDate, ...
 ├── registry.py         # RULES_BY_DOCUMENT_TYPE = {"ine": [...], "csf": [...], "comprobante_domicilio": [...]}
 └── validation_engine.py# validate(document_type, fields, today) -> validation block
@@ -101,7 +101,44 @@ Step 0 (format stabilization, before rules): INE field descriptions in `Config.D
 | `ine.clave_matches_curp` | error | Clave de elector birth date and sex = CURP birth date and sex |
 | `ine.names_match_curp` | warning | Name initials consistent with CURP positions 1, 3 and 4 (warning: CURP has legitimate exceptions) |
 
-CSF and comprobante de domicilio get their own tables in this ADR (or a follow-up ADR) when their turn comes; known inputs: CSF RFC/CURP consistency and `padron_status`; comprobante age ≤ 3 months using `fecha_emision`, falling back to `periodo_fin` (real CFE bills print no issue date).
+## Second rule set: CSF (2026-10-31)
+
+Decided with the developer: persona física **and** moral are supported; maximum age 3 months; the issue date in ISO like every other date.
+
+Step 0: `issued_at` and `documento_detectado` join the default fields (the regex extractor reports `csf` when the SAT heading "CONSTANCIA DE SITUACIÓN FISCAL" is present; the AI reports the same observation); CSF field descriptions in the prompt use the regex extractor's keys, so the rules work with either strategy; `issued_at` normalized to ISO. **`tipo_persona`** (`fisica` | `moral`) is derived by the app from the RFC length (13 / 12), never asked to the AI.
+
+| Code | Severity | Checks |
+|---|---|---|
+| `csf.required_fields` | error | rfc, full_name, padron_status, issued_at present |
+| `csf.document_detected` | error | The observation `documento_detectado` is a CSF |
+| `csf.rfc_format` | error | RFC structure for persona física (13) or moral (12) and a real date |
+| `csf.rfc_check_digit` | warning | RFC check digit. A warning: about 1.5% of RFCs in use carry an invalid one (python-stdnum disables this check by default) |
+| `csf.rfc_not_generic` | error | Not a generic RFC (XAXX010101000 general public, XEXX010101000 foreigners) |
+| `csf.curp_required` | error | Persona física: CURP present (counts as missing data for the verdict) |
+| `csf.curp_format` | error | Persona física: CURP structure and check digit |
+| `csf.rfc_matches_curp` | error | Persona física: RFC and CURP encode the same birth date |
+| `csf.padron_active` | error | Estatus en el padrón is ACTIVO |
+| `csf.max_age` | error | issued_at at most 3 calendar months before today (`Config.TZ`) and not in the future |
+
+The three persona física rules are wrapped in `OnlyForPersonaFisica`: for a persona moral they are reported as `skipped` with "Not applicable to a persona moral.", never failed. `MaxAge` takes a list of candidate date fields, so the comprobante can fall back from `fecha_emision` to `periodo_fin` (real CFE bills print no issue date).
+
+## Third rule set: comprobante de domicilio (2026-11-01)
+
+Decided with the developer: the age is measured from `fecha_emision`, falling back to `periodo_fin` (real CFE bills print no issue date); `fecha_limite_pago` is **not** a fallback (it is later than the period and would accept older bills); "corte a partir de" is not extracted. Required: holder, street, colonia, postal code and provider; exterior/interior number, municipio and estado are optional (addresses "SIN NÚMERO" or by manzana/lote exist, and some bills omit the state).
+
+Step 0: `documento_detectado` joins the default fields (the other formats were stabilized in Phase 2).
+
+| Code | Severity | Checks |
+|---|---|---|
+| `comprobante.required_fields` | error | nombre_titular, calle, colonia, codigo_postal, proveedor present |
+| `comprobante.date_present` | error | fecha_emision or periodo_fin present (`RequiredAnyOf`; counts as missing data, so the verdict is `incomplete`, never `valid`, when the age cannot be measured) |
+| `comprobante.document_detected` | error | The observation `documento_detectado` is a comprobante de domicilio |
+| `comprobante.postal_code_format` | error | 5 digits in the Mexican range (01000–99999) |
+| `comprobante.max_age` | error | fecha_emision, else periodo_fin, at most 3 calendar months before today (`Config.TZ`) and not in the future |
+| `comprobante.service_type_known` | warning | tipo_servicio is luz, agua, gas, telefono, internet or television (not `otro`) |
+| `comprobante.period_consistent` | warning | periodo_inicio ≤ periodo_fin ≤ fecha_limite_pago for the dates present (flags a likely misread date) |
+
+With this table the three document types of version 1 have rules.
 
 ## Consequences
 

@@ -1,8 +1,8 @@
 import re
 from datetime import date
 
-# Extracted fields that hold a single calendar date (comprobante de domicilio, INE birth date).
-DATE_FIELDS = {"fecha_emision", "periodo_inicio", "periodo_fin", "fecha_limite_pago", "fecha_nacimiento"}
+# Extracted fields that hold a single calendar date (comprobante de domicilio, INE birth date, CSF issue date).
+DATE_FIELDS = {"fecha_emision", "periodo_inicio", "periodo_fin", "fecha_limite_pago", "fecha_nacimiento", "issued_at"}
 # Fields that hold an expiration year: the INE prints "VIGENCIA 2021-2031" and is valid through 2031.
 YEAR_FIELDS = {"fecha_vencimiento"}
 

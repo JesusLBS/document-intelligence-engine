@@ -1,5 +1,5 @@
 """
-Generate the synthetic comprobante de domicilio samples in samples/pdf/.
+Generate the synthetic samples in samples/pdf/: comprobantes de domicilio and CSF (persona física and moral).
 
 Every name, address, number and provider is fictitious, and each page says so: the samples
 exercise the pipeline (embedded text and OCR) without personal data or real company layouts.
@@ -44,6 +44,54 @@ INTERNET_BILL = [
     (9, ""),
     (12, "Paquete Internet 100 Mbps + Linea fija"),
 ]
+
+
+def csf_lines(rfc: str, name_block: list[str], curp: str | None, issued: str, regime: str) -> list[tuple[int, str]]:
+    """
+    Lines of a CSF-like page, one item per line, in the order the CSF regex extractor expects.
+
+    No SAT logos or layout: only the text structure. Every value is fictitious.
+
+    Args:
+        rfc (str): Fictitious RFC (valid structure and check digit).
+        name_block (list[str]): Lines for the taxpayer's name section.
+        curp (str | None): Fictitious CURP, or None for a persona moral.
+        issued (str): Issue date as the SAT prints it ("30 DE OCTUBRE DE 2026").
+        regime (str): Tax regime name.
+
+    Returns:
+        list[tuple[int, str]]: (font size, text) per line.
+    """
+    lines = [
+        "CEDULA DE IDENTIFICACION FISCAL", rfc, "Registro Federal de Contribuyentes",
+        "CONSTANCIA DE SITUACIÓN FISCAL", "Lugar y Fecha de Emisión", f"CIUDAD DE MEXICO , MEXICO A {issued}",
+        "Datos de Identificación del Contribuyente:", "RFC:", rfc,
+    ]
+    if curp:
+        lines += ["CURP:", curp]
+    lines += name_block
+    lines += ["Estatus en el padrón:", "ACTIVO", "Regímenes:", "Régimen", regime, "01/01/2024",
+              "Sus datos personales son incorporados y protegidos en los sistemas del SAT"]
+    return [(9, line) for line in lines]
+
+
+CSF_ISSUED = "30 DE OCTUBRE DE 2026"
+
+CSF_FISICA = csf_lines(
+    rfc="PELJ900515AB7",
+    name_block=["Nombre (s):", "JUAN", "Primer Apellido:", "PEREZ", "Segundo Apellido:", "LOPEZ"],
+    curp="PELJ900515HDFRPN07",
+    issued=CSF_ISSUED,
+    regime="Régimen de Sueldos y Salarios e Ingresos Asimilados a Salarios",
+)
+
+CSF_MORAL = csf_lines(
+    rfc="ABC200101XY3",
+    name_block=["Denominación/Razón Social:", "EMPRESA EJEMPLO SA DE CV"],
+    curp=None,
+    issued=CSF_ISSUED,
+    regime="Régimen General de Ley Personas Morales",
+)
 
 
 def build_page(doc: fitz.Document, lines: list[tuple[int, str]]) -> None:
@@ -96,7 +144,51 @@ def internet_scan_sample(path: str, dpi: int = 150) -> None:
     source.close()
 
 
+def graphic_dates_sample(path: str, dpi: int = 200) -> None:
+    """
+    Digital bill whose dates are drawn as an image, like real CFE bills: the embedded text has no
+    date at all, so a text-only AI needs the OCR of the page (DocumentService OCR supplement).
+
+    Args:
+        path (str): Output PDF path.
+        dpi (int): Resolution of the drawn dates.
+    """
+    is_date = lambda text: text.startswith(("FECHA", "PERIODO"))
+    text_lines = [(size, "" if is_date(text) else text) for size, text in ELECTRICITY_BILL]
+    date_lines = [(size, text) for size, text in ELECTRICITY_BILL if is_date(text)]
+
+    graphic = fitz.open()
+    page = graphic.new_page(width=480, height=80)
+    for index, (size, text) in enumerate(date_lines):
+        page.insert_text((10, 20 + index * 20), text, fontsize=size + 2)
+    pixmap = page.get_pixmap(dpi=dpi)
+
+    doc = fitz.open()
+    build_page(doc, text_lines)
+    doc[0].insert_image(fitz.Rect(60, 500, 540, 580), pixmap=pixmap)
+    doc.save(path, deflate=True)
+    doc.close()
+    graphic.close()
+
+
+def digital_sample(path: str, lines: list[tuple[int, str]]) -> None:
+    """
+    Digital PDF with embedded text (PdfProcessor -> text_extraction, no OCR).
+
+    Args:
+        path (str): Output PDF path.
+        lines (list[tuple[int, str]]): Page lines.
+    """
+    doc = fitz.open()
+    build_page(doc, lines)
+    doc.save(path)
+    doc.close()
+
+
 if __name__ == "__main__":
     electricity_sample("samples/pdf/comprobante_luz_sample.pdf")
     internet_scan_sample("samples/pdf/comprobante_internet_scan_sample.pdf")
-    print("Generated samples/pdf/comprobante_luz_sample.pdf and samples/pdf/comprobante_internet_scan_sample.pdf")
+    digital_sample("samples/pdf/csf_fisica_sample.pdf", CSF_FISICA)
+    digital_sample("samples/pdf/csf_moral_sample.pdf", CSF_MORAL)
+    graphic_dates_sample("samples/pdf/comprobante_fechas_imagen_sample.pdf")
+    print("Generated the comprobante and CSF samples in samples/pdf/")

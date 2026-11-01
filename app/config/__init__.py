@@ -60,11 +60,11 @@ class Config:
             "nombre", "apellido_materno", "apellido_paterno", "curp", "fecha_nacimiento", "fecha_vencimiento",
             "clave_elector", "documento_detectado",
         ],
-        "csf": ["rfc", "curp", "full_name", "padron_status", "tax_regimes"],
+        "csf": ["rfc", "curp", "full_name", "padron_status", "tax_regimes", "issued_at", "documento_detectado"],
         "comprobante_domicilio": [
             "nombre_titular", "domicilio_completo", "calle", "numero_exterior", "numero_interior", "colonia",
             "municipio", "estado", "codigo_postal", "proveedor", "tipo_servicio", "numero_servicio",
-            "fecha_emision", "periodo_inicio", "periodo_fin", "fecha_limite_pago",
+            "fecha_emision", "periodo_inicio", "periodo_fin", "fecha_limite_pago", "documento_detectado",
         ],
     }
 
@@ -72,6 +72,17 @@ class Config:
     # Dates are requested as printed and converted to ISO by the app (app/utils/date_normalizer.py, day first):
     # asked for ISO, a provider read 05/10/2026 month first and returned 2026-05-10, which the app can't detect.
     DOCUMENT_FIELD_DESCRIPTIONS: dict = {
+        # Same keys the CSF regex extractor returns, so the rules work with either strategy.
+        "csf": {
+            "rfc": "RFC (12 characters for a company, 13 for a person), copied as printed",
+            "curp": "CURP (18 characters), or null for a company (persona moral)",
+            "full_name": "taxpayer's full name, or the company name (denominación o razón social)",
+            "padron_status": "Estatus en el padrón exactly as printed (e.g. ACTIVO)",
+            "tax_regimes": "list of the tax regime names (Regímenes)",
+            "issued_at": "issue date (Lugar y Fecha de Emisión), exactly as printed, without the place",
+            # Observation, not a verdict (docs/decisions/0001): a rule compares it with the requested type.
+            "documento_detectado": "which document the file actually is: ine, csf, comprobante_domicilio or otro",
+        },
         "ine": {
             "nombre": "given name(s) as printed (NOMBRE), without the surnames",
             "apellido_paterno": "first surname",
@@ -103,6 +114,8 @@ class Config:
             "periodo_inicio": "first day of the billed period, exactly as printed",
             "periodo_fin": "last day of the billed period, exactly as printed",
             "fecha_limite_pago": "payment due date (fecha límite de pago), exactly as printed",
+            # Observation, not a verdict (docs/decisions/0001): a rule compares it with the requested type.
+            "documento_detectado": "which document the file actually is: ine, csf, comprobante_domicilio or otro",
         },
     }
 

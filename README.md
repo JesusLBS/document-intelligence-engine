@@ -29,7 +29,7 @@ Casos de uso actuales:
 - **Pipeline PDF inteligente**: PyMuPDF diagnostica densidad de texto y decide entre extracción embebida u OCR.
 - **OCR**: páginas rasterizadas a 400 DPI y recortadas a la zona con contenido (a color, sin gris), Tesseract con modo de texto disperso como respaldo, y corrección por posición de errores típicos del OCR en CURP y clave de elector.
 - **IA intercambiable**: `AiExtractor` con providers Gemini (PDF de las páginas pedidas + texto) y Groq (solo texto).
-- **Validación de negocio**: reglas deterministas por tipo de documento (INE: vigencia en hora de México, dígito verificador del CURP, CURP vs fecha de nacimiento y clave de elector); la IA solo reporta observaciones ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)).
+- **Validación de negocio**: reglas deterministas por tipo de documento con un veredicto global (INE: vigencia en hora de México, dígito verificador del CURP, CURP vs fecha de nacimiento; CSF: persona física y moral, RFC, estatus en el padrón, antigüedad máxima de 3 meses; comprobante: antigüedad de 3 meses con la fecha de emisión o el fin del periodo, código postal); la IA solo reporta observaciones ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)).
 - **Validación de entrada**: Marshmallow schemas, excepciones centralizadas, logging estructurado.
 - **Contenedorización y CI**: Docker + nginx como reverse proxy; GitHub Actions corre pytest en cada PR.
 
@@ -131,7 +131,7 @@ document-intelligence-engine/
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
 ├── scripts/                 # up, verify, smoke, doctor, check_extraction (los llama el Makefile) y generate_samples.py
-├── samples/                 # pdf/: INE pública y comprobantes ficticios · expected/: referencias de make check-extraction
+├── samples/                 # pdf/: INE pública, comprobantes y CSF ficticios · expected/: referencias de make check-extraction
 ├── storage/                 # debug/, logs/ (generados en runtime, ignorados por git)
 ├── uploads/                 # Uploads temporales (ignorados por git)
 ├── .github/workflows/       # CI (pytest)
@@ -291,7 +291,7 @@ Procesa un documento PDF y extrae campos según tipo y estrategia.
 | `from_page` / `to_page` | int | No | Rango de páginas (1-indexed) |
 | `all_fields` | bool | No | Extraer todos los campos detectables (IA) |
 | `include_raw_text` | bool | No | Incluir texto crudo en respuesta (default: `true`) |
-| `debug_mode` | bool | No | Guardar en `storage/debug/{request_id}/` el archivo original, las páginas del rango como imagen, lo que recibió el extractor (texto y, para Gemini, el PDF del rango) y el resultado. Funciona con cualquier documento, con o sin OCR |
+| `debug_mode` | bool | No | Guardar en `storage/debug/{request_id}/` el archivo original, las páginas del rango como imagen, lo que recibió el extractor (texto y, para Gemini, el PDF del rango), el resultado y la validación (`validation.json`). Funciona con cualquier documento, con o sin OCR |
 
 #### Ejemplo CSF (regex)
 
@@ -389,12 +389,12 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
 }
 ```
 
-**Validación de negocio (`validation`).** Con los campos por defecto, la respuesta incluye el veredicto de reglas deterministas de la app: la IA extrae y reporta lo que ve (`documentoDetectado`), las reglas deciden ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)). Reglas de la INE: campos requeridos, documento detectado, estructura y dígito verificador del CURP, estructura de la clave de elector, vigencia (contra la fecha de hoy en hora de México, `TZ`), CURP vs fecha de nacimiento, clave de elector vs CURP e iniciales del nombre (warning). La respuesta sigue siendo `200`. **`verdict.status`** es la respuesta global: `valid`, `invalid` (falló una regla de fondo), `incomplete` (solo faltan datos: no se puede confirmar ni rechazar) o `not_validated` (con `fields` personalizados o tipos sin reglas todavía, como CSF y comprobante; en esos casos `validation` es `null`).
+**Validación de negocio (`validation`).** Con los campos por defecto, la respuesta incluye el veredicto de reglas deterministas de la app: la IA extrae y reporta lo que ve (`documentoDetectado`), las reglas deciden ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)). Reglas de la INE: campos requeridos, documento detectado, estructura y dígito verificador del CURP, estructura de la clave de elector, vigencia (contra la fecha de hoy en hora de México, `TZ`), CURP vs fecha de nacimiento, clave de elector vs CURP e iniciales del nombre (warning). Reglas de la CSF (persona física y moral; `tipoPersona` lo calcula la app por la longitud del RFC): campos requeridos, documento detectado, estructura del RFC, dígito verificador del RFC (warning), RFC no genérico, CURP y RFC vs CURP (solo persona física), estatus `ACTIVO` en el padrón y antigüedad máxima de 3 meses. Funcionan igual con `extractor=regex` y con IA. Reglas del comprobante: campos requeridos (titular, calle, colonia, código postal, proveedor), al menos una fecha, documento detectado, código postal de 5 dígitos, antigüedad máxima de 3 meses (fecha de emisión o, si el recibo no la trae, fin del periodo facturado), tipo de servicio conocido y periodo coherente (estas dos, warning). La respuesta sigue siendo `200`. **`verdict.status`** es la respuesta global: `valid`, `invalid` (falló una regla de fondo), `incomplete` (solo faltan datos: no se puede confirmar ni rechazar) o `not_validated` (con `fields` personalizados; en ese caso `validation` es `null`).
 
 
 #### Ejemplo comprobante de domicilio (ai)
 
-Solo con IA (`extractor` se omite: es el default para `ine` y `comprobante_domicilio`). Sirve para recibos de luz, agua, gas, teléfono o internet, digitales o escaneados. Las fechas se devuelven en ISO (`YYYY-MM-DD`); la app las convierte desde el formato impreso (`14 OCT 26`, `05/10/2026`, siempre día primero).
+Solo con IA (`extractor` se omite: es el default para `ine` y `comprobante_domicilio`). Con Groq y un PDF digital, la app agrega al texto embebido el OCR de la página (`ocrSupplement: true`): los recibos de CFE dibujan fechas y titular como gráficos, que no vienen en el texto. Sirve para recibos de luz, agua, gas, teléfono o internet, digitales o escaneados. Las fechas se devuelven en ISO (`YYYY-MM-DD`); la app las convierte desde el formato impreso (`14 OCT 26`, `05/10/2026`, siempre día primero).
 
 ```bash
 curl -X POST http://document-intelligence.test/api/v1/documents/process \

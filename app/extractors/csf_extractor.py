@@ -30,8 +30,21 @@ class CsfExtractor(BaseExtractor):
             "padron_status": self._extract_padron_status(text),
             "tax_regimes": self._extract_tax_regimes(text),
             "economic_activities": self._extract_economic_activities(text),
+            "documento_detectado": self._detect_document(text),
         }
         return self._filter_fields(data, requested_fields)
+
+    def _detect_document(self, text: str) -> str:
+        """
+        Observation for the csf.document_detected rule, the regex counterpart of what the AI reports.
+
+        Args:
+            text (str): Raw text extracted from PDF.
+
+        Returns:
+            str: 'csf' when the SAT heading is present, otherwise 'otro'.
+        """
+        return "csf" if re.search(r"CONSTANCIA\s+DE\s+SITUACI[OÓ]N\s+FISCAL", text, re.IGNORECASE) else "otro"
 
     def _extract_rfc(self, text: str) -> str | None:
         match = re.search(r'\b([A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3})\b', text)
@@ -48,6 +61,10 @@ class CsfExtractor(BaseExtractor):
         if first and last:
             return f"{first} {last}".strip()
         match = re.search(r'raz[oó]n\s*social\s*\n([A-ZÁÉÍÓÚÑ ]+)\n', text)
+        if match:
+            return match.group(1).strip()
+        # Persona moral: "Denominación/Razón Social:" followed by the company name (may hold digits, & , .).
+        match = re.search(r'Denominaci[oó]n\s*/\s*Raz[oó]n\s*Social:\s*\n([A-ZÁÉÍÓÚÑ0-9&.,\- ]+)\n', text, re.IGNORECASE)
         return match.group(1).strip() if match else None
 
     def _extract_first_name(self, text: str) -> str | None:

@@ -29,7 +29,7 @@ Current use cases:
 - **Smart PDF pipeline**: PyMuPDF diagnoses text density and chooses between embedded extraction or OCR.
 - **OCR**: pages rasterized at 400 DPI and cropped to their content area (color, no grayscale), Tesseract with sparse-text fallback, and positional correction of typical OCR errors in CURP and clave de elector.
 - **Interchangeable AI**: `AiExtractor` with Gemini (PDF of the requested pages + text) and Groq (text-only) providers.
-- **Business validation**: deterministic rules per document type (INE: expiration on Mexico's calendar, CURP check digit, CURP vs birth date and clave de elector); the AI only reports observations ([ADR 0001](./decisions/0001-business-validation-rules.md)).
+- **Business validation**: deterministic rules per document type with a global verdict (INE: expiration on Mexico's calendar, CURP check digit, CURP vs birth date; CSF: persona física and moral, RFC, registry status, maximum age of 3 months; comprobante: 3-month age from the issue date or the period end, postal code); the AI only reports observations ([ADR 0001](./decisions/0001-business-validation-rules.md)).
 - **Input validation**: Marshmallow schemas, centralized exceptions, structured logging.
 - **Containerization and CI**: Docker + nginx as reverse proxy; GitHub Actions runs pytest on every PR.
 
@@ -131,7 +131,7 @@ document-intelligence-engine/
 ├── docker/                  # Dockerfile (Python 3.12 + Tesseract + poppler)
 ├── nginx/                   # Reverse proxy
 ├── scripts/                 # up, verify, smoke, doctor, check_extraction (called by the Makefile) and generate_samples.py
-├── samples/                 # pdf/: public INE and fictitious address proofs · expected/: make check-extraction references
+├── samples/                 # pdf/: public INE, fictitious address proofs and CSF · expected/: make check-extraction references
 ├── storage/                 # debug/, logs/ (runtime, git-ignored)
 ├── uploads/                 # Temporary uploads (git-ignored)
 ├── .github/workflows/       # CI (pytest)
@@ -291,7 +291,7 @@ Processes a PDF document and extracts fields based on type and strategy.
 | `from_page` / `to_page` | int | No | Page range (1-indexed) |
 | `all_fields` | bool | No | Extract all detectable fields (AI) |
 | `include_raw_text` | bool | No | Include raw text in response (default: `true`) |
-| `debug_mode` | bool | No | Save to `storage/debug/{request_id}/` the original file, the requested pages as images, what the extractor received (text and, for Gemini, the PDF of the range) and the result. Works for any document, with or without OCR |
+| `debug_mode` | bool | No | Save to `storage/debug/{request_id}/` the original file, the requested pages as images, what the extractor received (text and, for Gemini, the PDF of the range), the result and the validation (`validation.json`). Works for any document, with or without OCR |
 
 #### CSF example (regex)
 
@@ -389,12 +389,12 @@ curl -X POST http://document-intelligence.test/api/v1/documents/process \
 }
 ```
 
-**Business validation (`validation`).** With the default fields, the response includes the verdict of the app's deterministic rules: the AI extracts and reports what it sees (`documentoDetectado`), the rules decide ([ADR 0001](./decisions/0001-business-validation-rules.md)). INE rules: required fields, detected document, CURP structure and check digit, clave de elector structure, expiration (against today's date in Mexico's time zone, `TZ`), CURP vs birth date, clave de elector vs CURP and name initials (warning). The response stays `200`. **`verdict.status`** is the global answer: `valid`, `invalid` (a content rule failed), `incomplete` (only data is missing: it can be neither confirmed nor rejected) or `not_validated` (custom `fields` list or types without rules yet, such as CSF and comprobante; `validation` is `null` then).
+**Business validation (`validation`).** With the default fields, the response includes the verdict of the app's deterministic rules: the AI extracts and reports what it sees (`documentoDetectado`), the rules decide ([ADR 0001](./decisions/0001-business-validation-rules.md)). INE rules: required fields, detected document, CURP structure and check digit, clave de elector structure, expiration (against today's date in Mexico's time zone, `TZ`), CURP vs birth date, clave de elector vs CURP and name initials (warning). CSF rules (persona física and moral; the app derives `tipoPersona` from the RFC length): required fields, detected document, RFC structure, RFC check digit (warning), non-generic RFC, CURP and RFC vs CURP (persona física only), `ACTIVO` registry status and a maximum age of 3 months. They work the same with `extractor=regex` and with AI. Comprobante rules: required fields (holder, street, colonia, postal code, provider), at least one date, detected document, 5-digit postal code, maximum age of 3 months (issue date or, when the bill has none, the billed period end), known service type and consistent period (these two, warnings). The response stays `200`. **`verdict.status`** is the global answer: `valid`, `invalid` (a content rule failed), `incomplete` (only data is missing: it can be neither confirmed nor rejected) or `not_validated` (custom `fields` list; `validation` is `null` then).
 
 
 #### Address proof example (ai)
 
-AI only (`extractor` omitted: it is the default for `ine` and `comprobante_domicilio`). Works for electricity, water, gas, phone or internet bills, digital or scanned. Dates come back as ISO (`YYYY-MM-DD`); the app converts them from the printed format (`14 OCT 26`, `05/10/2026`, always day first).
+AI only (`extractor` omitted: it is the default for `ine` and `comprobante_domicilio`). With Groq and a digital PDF, the app adds the page OCR to the embedded text (`ocrSupplement: true`): CFE bills draw dates and the holder as graphics, which are not in the text. Works for electricity, water, gas, phone or internet bills, digital or scanned. Dates come back as ISO (`YYYY-MM-DD`); the app converts them from the printed format (`14 OCT 26`, `05/10/2026`, always day first).
 
 ```bash
 curl -X POST http://document-intelligence.test/api/v1/documents/process \
