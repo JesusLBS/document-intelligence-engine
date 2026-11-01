@@ -9,6 +9,10 @@ class BaseExtractor(ABC):
     # True when the extractor reads the document file itself (not only its text); the service
     # then exports the requested pages and passes them in ExtractionContext.document_file.
     accepts_document_file: bool = False
+    # True when the extractor reads text only but interprets it freely (a text-only AI): on a digital
+    # PDF the service then adds the OCR of the pages, since the embedded text can miss graphics.
+    # Regex extractors keep False: they rely on the embedded text's exact structure.
+    wants_page_ocr: bool = False
 
     @abstractmethod
     def extract(self, text: str, requested_fields: list[str], context: ExtractionContext | None = None) -> dict:

@@ -64,7 +64,7 @@ class Config:
         "comprobante_domicilio": [
             "nombre_titular", "domicilio_completo", "calle", "numero_exterior", "numero_interior", "colonia",
             "municipio", "estado", "codigo_postal", "proveedor", "tipo_servicio", "numero_servicio",
-            "fecha_emision", "periodo_inicio", "periodo_fin", "fecha_limite_pago",
+            "fecha_emision", "periodo_inicio", "periodo_fin", "fecha_limite_pago", "documento_detectado",
         ],
     }
 
@@ -114,6 +114,8 @@ class Config:
             "periodo_inicio": "first day of the billed period, exactly as printed",
             "periodo_fin": "last day of the billed period, exactly as printed",
             "fecha_limite_pago": "payment due date (fecha límite de pago), exactly as printed",
+            # Observation, not a verdict (docs/decisions/0001): a rule compares it with the requested type.
+            "documento_detectado": "which document the file actually is: ine, csf, comprobante_domicilio or otro",
         },
     }
 

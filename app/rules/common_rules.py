@@ -29,6 +29,32 @@ class RequiredFields(Rule):
         return passed("All required fields are present.", self.required)
 
 
+class RequiredAnyOf(Rule):
+    """
+    At least one of the listed fields is present (e.g. some date to measure a bill's age).
+
+    Reports missing data: failing it alone makes the verdict "incomplete", not "invalid".
+    """
+
+    reports_missing_data = True
+
+    def __init__(self, code: str, candidates: tuple[str, ...]):
+        """
+        Args:
+            code (str): Stable rule code (e.g. 'comprobante.date_present').
+            candidates (tuple[str, ...]): Fields of which at least one must be present.
+        """
+        self.code = code
+        self.candidates = candidates
+
+    def check(self, fields: dict, today: date) -> RuleResult:
+        present = tuple(name for name in self.candidates if not is_empty(fields.get(name)))
+        names = ", ".join(to_camel_case(name) for name in self.candidates)
+        if not present:
+            return failed(f"None of these fields is present: {names}.", self.candidates)
+        return passed(f"At least one of {names} is present.", present)
+
+
 class NotExpired(Rule):
     """An expiration year (YYYY) is the current year or later: the document is valid through December 31."""
 
@@ -132,8 +158,8 @@ class MaxAge(Rule):
         if document_date > today:
             return failed(f"{to_camel_case(name)} is in the future (checked on {today.isoformat()}).")
         if document_date < oldest:
-            return failed(f"The document is older than {self.months} months: issued before {oldest.isoformat()}.")
-        return passed(f"Issued within the last {self.months} months (on or after {oldest.isoformat()}).")
+            return failed(f"The document is older than {self.months} months: dated before {oldest.isoformat()}.")
+        return passed(f"Dated within the last {self.months} months (on or after {oldest.isoformat()}).")
 
 
 class OnlyForPersonaFisica(Rule):

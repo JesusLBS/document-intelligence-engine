@@ -122,7 +122,23 @@ Step 0: `issued_at` and `documento_detectado` join the default fields (the regex
 
 The three persona física rules are wrapped in `OnlyForPersonaFisica`: for a persona moral they are reported as `skipped` with "Not applicable to a persona moral.", never failed. `MaxAge` takes a list of candidate date fields, so the comprobante can fall back from `fecha_emision` to `periodo_fin` (real CFE bills print no issue date).
 
-The comprobante de domicilio gets its table when its turn comes.
+## Third rule set: comprobante de domicilio (2026-11-01)
+
+Decided with the developer: the age is measured from `fecha_emision`, falling back to `periodo_fin` (real CFE bills print no issue date); `fecha_limite_pago` is **not** a fallback (it is later than the period and would accept older bills); "corte a partir de" is not extracted. Required: holder, street, colonia, postal code and provider; exterior/interior number, municipio and estado are optional (addresses "SIN NÚMERO" or by manzana/lote exist, and some bills omit the state).
+
+Step 0: `documento_detectado` joins the default fields (the other formats were stabilized in Phase 2).
+
+| Code | Severity | Checks |
+|---|---|---|
+| `comprobante.required_fields` | error | nombre_titular, calle, colonia, codigo_postal, proveedor present |
+| `comprobante.date_present` | error | fecha_emision or periodo_fin present (`RequiredAnyOf`; counts as missing data, so the verdict is `incomplete`, never `valid`, when the age cannot be measured) |
+| `comprobante.document_detected` | error | The observation `documento_detectado` is a comprobante de domicilio |
+| `comprobante.postal_code_format` | error | 5 digits in the Mexican range (01000–99999) |
+| `comprobante.max_age` | error | fecha_emision, else periodo_fin, at most 3 calendar months before today (`Config.TZ`) and not in the future |
+| `comprobante.service_type_known` | warning | tipo_servicio is luz, agua, gas, telefono, internet or television (not `otro`) |
+| `comprobante.period_consistent` | warning | periodo_inicio ≤ periodo_fin ≤ fecha_limite_pago for the dates present (flags a likely misread date) |
+
+With this table the three document types of version 1 have rules.
 
 ## Consequences
 

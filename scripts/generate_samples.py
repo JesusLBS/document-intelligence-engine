@@ -144,6 +144,33 @@ def internet_scan_sample(path: str, dpi: int = 150) -> None:
     source.close()
 
 
+def graphic_dates_sample(path: str, dpi: int = 200) -> None:
+    """
+    Digital bill whose dates are drawn as an image, like real CFE bills: the embedded text has no
+    date at all, so a text-only AI needs the OCR of the page (DocumentService OCR supplement).
+
+    Args:
+        path (str): Output PDF path.
+        dpi (int): Resolution of the drawn dates.
+    """
+    is_date = lambda text: text.startswith(("FECHA", "PERIODO"))
+    text_lines = [(size, "" if is_date(text) else text) for size, text in ELECTRICITY_BILL]
+    date_lines = [(size, text) for size, text in ELECTRICITY_BILL if is_date(text)]
+
+    graphic = fitz.open()
+    page = graphic.new_page(width=480, height=80)
+    for index, (size, text) in enumerate(date_lines):
+        page.insert_text((10, 20 + index * 20), text, fontsize=size + 2)
+    pixmap = page.get_pixmap(dpi=dpi)
+
+    doc = fitz.open()
+    build_page(doc, text_lines)
+    doc[0].insert_image(fitz.Rect(60, 500, 540, 580), pixmap=pixmap)
+    doc.save(path, deflate=True)
+    doc.close()
+    graphic.close()
+
+
 def digital_sample(path: str, lines: list[tuple[int, str]]) -> None:
     """
     Digital PDF with embedded text (PdfProcessor -> text_extraction, no OCR).
@@ -163,4 +190,5 @@ if __name__ == "__main__":
     internet_scan_sample("samples/pdf/comprobante_internet_scan_sample.pdf")
     digital_sample("samples/pdf/csf_fisica_sample.pdf", CSF_FISICA)
     digital_sample("samples/pdf/csf_moral_sample.pdf", CSF_MORAL)
+    graphic_dates_sample("samples/pdf/comprobante_fechas_imagen_sample.pdf")
     print("Generated the comprobante and CSF samples in samples/pdf/")

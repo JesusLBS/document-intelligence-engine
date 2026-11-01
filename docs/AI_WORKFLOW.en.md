@@ -81,6 +81,7 @@ The proof that the process works is the mistakes that never reached `main`. Each
 | A daily-quota 429 was reported as "overloaded" | Developer test | The message says which quota and when it resets (issue 23) |
 | A test passed in Docker and failed in CI | The PR's CI run | `make verify` reproduces the CI environment (issue 24) |
 | A real INE looked valid when tested, but `validation.valid` was `false`: the OCR read `0` as `O` at CURP position 17, a change the check digit cannot detect, and the CURP vs birth date rule flagged it | Review of that request's debug snapshot | Global `verdict` always visible, and the century resolved from the birth date ([ADR 0001](./decisions/0001-business-validation-rules.md)) |
+| The comprobante rules returned `incomplete` on a real CFE bill with Groq: holder and dates were missing | Review of the debug snapshot: the PDF's embedded text had no date at all (they are drawn as graphics); the OCR of the same page had them | A text-only AI also gets the OCR of a digital PDF's pages, and a synthetic sample with dates drawn as an image joined `make check-extraction` (issue 27) |
 | The `.env` hook denied `.env*` only where a real `.env` existed (bash expanded the wildcard) | CI on the PR to `main` | `make verify` runs on a clean copy, and the hook tests run in empty and populated folders (issue 26). It also showed that branches need protection: that PR was merged with a red check |
 
 ## 6. Limits (to avoid overselling)

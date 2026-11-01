@@ -34,6 +34,16 @@ class AiExtractor(BaseExtractor):
         return self._provider
 
     @property
+    def wants_page_ocr(self) -> bool:
+        """
+        Whether a digital PDF's text should be supplemented with OCR: yes for text-only providers (Groq).
+
+        Returns:
+            bool: True when the provider cannot read the document file itself.
+        """
+        return not self._client.accepts_document_file
+
+    @property
     def accepts_document_file(self) -> bool:
         """
         Whether the resolved provider reads the document file (Gemini) or only text (Groq).
