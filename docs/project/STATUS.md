@@ -6,7 +6,7 @@ Last updated: 2026-10-31
 
 ## Current phase
 
-**Phase 4 — Business Validation, CSF** — `feature/csf-validation` (**in progress**): 10 rules for persona física and moral (decided with the developer: both supported, max age 3 months, ISO issue date; table in [ADR 0001](../decisions/0001-business-validation-rules.md)); `tipo_persona` derived from the RFC by the app; regex extractor now reports `documento_detectado` and the persona moral company name. Live: synthetic CSF física 10/10 and moral 7/7 (3 CURP rules not applicable), identical with regex and Groq; the INE sent as CSF is rejected with regex alone. Pending: the developer's check with a real CSF in Postman.
+**Phase 4 — Business Validation, CSF** — `feature/csf-validation` (**done, ready for PR**): 10 rules for persona física and moral (decided with the developer: both supported, max age 3 months, ISO issue date; table in [ADR 0001](../decisions/0001-business-validation-rules.md)); `tipo_persona` derived from the RFC by the app; regex extractor now reports `documento_detectado` and the persona moral company name. Live: synthetic CSF física 10/10 and moral 7/7 (3 CURP rules not applicable), identical with regex and Groq; the INE sent as CSF is rejected with regex alone. The developer verified a real CSF in Postman with regex and with AI (2026-10-31).
 
 **Next target:** Phase 4 for comprobante de domicilio. With the three types done, version 1 is complete.
 
@@ -26,7 +26,7 @@ Version 1 = Phases 1, 2, 4 and 6 for INE, CSF and comprobante de domicilio. Phas
 | 1 — Core Platform | done | API, PDF diagnosis, Tesseract OCR, factories, standard responses, validation, Docker + nginx |
 | 2 — Data Extraction | done | CSF regex; INE and comprobante via AI (Gemini reads the PDF, Groq the text); CURP hints; ID and date normalizers. Real INE, CSF and CFE bill verified by the developer |
 | 3 — File Processors | possible extension | Not planned. `app/processors/{image,excel,csv,word}/` are empty extension points |
-| 4 — Business Validation | in progress | INE done (8 rules + verdict). CSF 10 rules (in review). Next: comprobante de domicilio |
+| 4 — Business Validation | in progress | INE done (8 rules + verdict). CSF done (10 rules, real CSF verified). Next: comprobante de domicilio |
 | 5 — More AI Providers | possible extension | Gemini and Groq are part of Phase 2; OpenAI, Claude, Azure, AWS not planned |
 | 6 — Quality & Observability | in progress | CI on every PR; 269 tests (API, business rules, service, extractors with mocked HTTP, OCR, normalizers, debug store, Claude Code hooks); `make verify` reproduces CI; `make check-extraction` for live checks. Pending: Postman screenshots refresh |
 
