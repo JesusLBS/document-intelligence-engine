@@ -29,7 +29,7 @@ Current use cases:
 - **Smart PDF pipeline**: PyMuPDF diagnoses text density and chooses between embedded extraction or OCR.
 - **OCR**: pages rasterized at 400 DPI and cropped to their content area (color, no grayscale), Tesseract with sparse-text fallback, and positional correction of typical OCR errors in CURP and clave de elector.
 - **Interchangeable AI**: `AiExtractor` with Gemini (PDF of the requested pages + text) and Groq (text-only) providers.
-- **Business validation**: deterministic rules per document type (INE: expiration on Mexico's calendar, CURP check digit, CURP vs birth date and clave de elector); the AI only reports observations ([ADR 0001](./decisions/0001-business-validation-rules.md)).
+- **Business validation**: deterministic rules per document type with a global verdict (INE: expiration on Mexico's calendar, CURP check digit, CURP vs birth date; CSF: persona física and moral, RFC, registry status, maximum age of 3 months; comprobante: 3-month age from the issue date or the period end, postal code); the AI only reports observations ([ADR 0001](./decisions/0001-business-validation-rules.md)).
 - **Input validation**: Marshmallow schemas, centralized exceptions, structured logging.
 - **Containerization and CI**: Docker + nginx as reverse proxy; GitHub Actions runs pytest on every PR.
 
@@ -291,7 +291,7 @@ Processes a PDF document and extracts fields based on type and strategy.
 | `from_page` / `to_page` | int | No | Page range (1-indexed) |
 | `all_fields` | bool | No | Extract all detectable fields (AI) |
 | `include_raw_text` | bool | No | Include raw text in response (default: `true`) |
-| `debug_mode` | bool | No | Save to `storage/debug/{request_id}/` the original file, the requested pages as images, what the extractor received (text and, for Gemini, the PDF of the range) and the result. Works for any document, with or without OCR |
+| `debug_mode` | bool | No | Save to `storage/debug/{request_id}/` the original file, the requested pages as images, what the extractor received (text and, for Gemini, the PDF of the range), the result and the validation (`validation.json`). Works for any document, with or without OCR |
 
 #### CSF example (regex)
 
