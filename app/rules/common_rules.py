@@ -123,8 +123,8 @@ class MaxAge(Rule):
     """
     A document date (ISO) is at most `months` old and not in the future, on Config.TZ's calendar.
 
-    `date_fields` is tried in order: the first present one is used (the comprobante prints no issue
-    date on CFE bills, so it will fall back to the billed period end).
+    `date_fields` is tried in order: the first present one is used (CFE bills print no issue date,
+    so the comprobante falls back to the billed period end).
     """
 
     def __init__(self, code: str, date_fields: tuple[str, ...], months: int):

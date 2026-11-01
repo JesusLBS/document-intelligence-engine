@@ -29,7 +29,7 @@ Casos de uso actuales:
 - **Pipeline PDF inteligente**: PyMuPDF diagnostica densidad de texto y decide entre extracción embebida u OCR.
 - **OCR**: páginas rasterizadas a 400 DPI y recortadas a la zona con contenido (a color, sin gris), Tesseract con modo de texto disperso como respaldo, y corrección por posición de errores típicos del OCR en CURP y clave de elector.
 - **IA intercambiable**: `AiExtractor` con providers Gemini (PDF de las páginas pedidas + texto) y Groq (solo texto).
-- **Validación de negocio**: reglas deterministas por tipo de documento (INE: vigencia en hora de México, dígito verificador del CURP, CURP vs fecha de nacimiento y clave de elector); la IA solo reporta observaciones ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)).
+- **Validación de negocio**: reglas deterministas por tipo de documento con un veredicto global (INE: vigencia en hora de México, dígito verificador del CURP, CURP vs fecha de nacimiento; CSF: persona física y moral, RFC, estatus en el padrón, antigüedad máxima de 3 meses; comprobante: antigüedad de 3 meses con la fecha de emisión o el fin del periodo, código postal); la IA solo reporta observaciones ([ADR 0001](./docs/decisions/0001-business-validation-rules.md)).
 - **Validación de entrada**: Marshmallow schemas, excepciones centralizadas, logging estructurado.
 - **Contenedorización y CI**: Docker + nginx como reverse proxy; GitHub Actions corre pytest en cada PR.
 
@@ -291,7 +291,7 @@ Procesa un documento PDF y extrae campos según tipo y estrategia.
 | `from_page` / `to_page` | int | No | Rango de páginas (1-indexed) |
 | `all_fields` | bool | No | Extraer todos los campos detectables (IA) |
 | `include_raw_text` | bool | No | Incluir texto crudo en respuesta (default: `true`) |
-| `debug_mode` | bool | No | Guardar en `storage/debug/{request_id}/` el archivo original, las páginas del rango como imagen, lo que recibió el extractor (texto y, para Gemini, el PDF del rango) y el resultado. Funciona con cualquier documento, con o sin OCR |
+| `debug_mode` | bool | No | Guardar en `storage/debug/{request_id}/` el archivo original, las páginas del rango como imagen, lo que recibió el extractor (texto y, para Gemini, el PDF del rango), el resultado y la validación (`validation.json`). Funciona con cualquier documento, con o sin OCR |
 
 #### Ejemplo CSF (regex)
 

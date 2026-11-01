@@ -2,17 +2,16 @@
 
 **Read this first for "what phase are we in and what's next."** Scope and reasoning of each phase live in [`PROJECT_PLAN.md`](./PROJECT_PLAN.md) → Project Roadmap — open it only when you need the *why*.
 
-Last updated: 2026-10-31
+Last updated: 2026-11-01
 
 ## Current phase
 
-**Phase 4 — Business Validation, comprobante de domicilio** — `feature/address-proof-validation` (**in progress**): 7 rules (decided with the developer: age from `fecha_emision`, else `periodo_fin`; the due date is not a fallback; no "corte a partir de"; table in [ADR 0001](../decisions/0001-business-validation-rules.md)). Live with Groq: both synthetic bills `valid` 7/7; the INE sent as a bill is `invalid` (`comprobante.document_detected`) even though Groq filled holder and address from the INE. Developer's real CFE bill with Groq: verdict `incomplete` — holder and every date missing because the PDF's embedded text has none (drawn as graphics); the OCR of the same page has them (issue 27) → a text-only AI now also gets the page OCR of a digital PDF (`ocrSupplement`); reproduced with a synthetic bill whose dates are an image (Groq: 4/4 dates, `valid` 7/7). Pending: the developer's re-check with the real CFE bill. With it, the three types of version 1 have rules.
+**Version 1 complete — closing** (`docs/v1-close`): Phase 4 done for the three document types; this branch aligns the docs after the `revisor-docs` audit before promoting `develop` → `main` as version 1. Pending on the developer's side: Postman screenshots refresh (non-blocking).
 
-Done just before: **Phase 4, CSF** — `feature/csf-validation` (PR #13): 10 rules for persona física and moral (decided with the developer: both supported, max age 3 months, ISO issue date; table in [ADR 0001](../decisions/0001-business-validation-rules.md)); `tipo_persona` derived from the RFC by the app; regex extractor now reports `documento_detectado` and the persona moral company name. Live: synthetic CSF física 10/10 and moral 7/7 (3 CURP rules not applicable), identical with regex and Groq; the INE sent as CSF is rejected with regex alone. The developer verified a real CSF in Postman with regex and with AI (2026-10-31).
-
-**Next target:** close version 1: `revisor-docs` audit, Postman screenshots refresh (developer), PR `develop` → `main`.
+**Next target:** none planned inside version 1. Possible extensions are listed in PROJECT_PLAN.md → Project Roadmap (Phases 3 and 5).
 
 Done before:
+- Phase 4, comprobante de domicilio: `feature/address-proof-validation` (PR #14) — 7 rules (age from `fecha_emision`, else `periodo_fin`; the due date is not a fallback; table in [ADR 0001](../decisions/0001-business-validation-rules.md)); a text-only AI (Groq) also gets the page OCR of a digital PDF (issue 27). Verified: synthetic bills `valid` 7/7 with Groq (incl. dates drawn as an image); the developer's real CFE bill `valid` with Groq after the issue 27 fix (Gemini answered 503 high demand at that moment).
 - Phase 4, INE: `feature/ine-validation` (PR #11, promoted to `main` in PR #12) — [ADR 0001](../decisions/0001-business-validation-rules.md) accepted; rules engine in `app/rules/` with 8 INE rules and a global `verdict`; INE formats stabilized (birth date ISO, expiration `YYYY`); CURP recovery from text and homoclave century fix (an O/0 swap at position 17 is invisible to the check digit). Verified: Groq 8/8 on 28 runs of the sample; the developer's real INE re-evaluated `valid` (8/8) after the homoclave fix.
 - Alignment before Phase 4: `docs/ai-workflow-and-cleanup` (PR #7) and its CI fix `fix/ci-env-hook-glob` (PR #9, issue 26); `develop` promoted to `main`.
 - Phase 2 for the three types: `feature/address-proof-extraction` (PR #6) — comprobante de domicilio via AI, INE and comprobante AI-only, `estado_cuenta` / `licencia_profesional` dropped, Gemini reads the PDF of the requested pages, debug snapshot for any document, quota errors (issues 21–24).
@@ -28,9 +27,9 @@ Version 1 = Phases 1, 2, 4 and 6 for INE, CSF and comprobante de domicilio. Phas
 | 1 — Core Platform | done | API, PDF diagnosis, Tesseract OCR, factories, standard responses, validation, Docker + nginx |
 | 2 — Data Extraction | done | CSF regex; INE and comprobante via AI (Gemini reads the PDF, Groq the text); CURP hints; ID and date normalizers. Real INE, CSF and CFE bill verified by the developer |
 | 3 — File Processors | possible extension | Not planned. `app/processors/{image,excel,csv,word}/` are empty extension points |
-| 4 — Business Validation | in progress | INE done (8 rules + verdict). CSF done (10 rules). Comprobante 7 rules (in review) |
+| 4 — Business Validation | done | INE 8 rules, CSF 10, comprobante 7, plus the global `verdict`. Real INE, CSF and CFE bill verified by the developer |
 | 5 — More AI Providers | possible extension | Gemini and Groq are part of Phase 2; OpenAI, Claude, Azure, AWS not planned |
-| 6 — Quality & Observability | in progress | CI on every PR; 295 tests (API, business rules, service, extractors with mocked HTTP, OCR, normalizers, debug store, Claude Code hooks); `make verify` reproduces CI; `make check-extraction` for live checks. Pending: Postman screenshots refresh |
+| 6 — Quality & Observability | done | CI on every PR; 295 tests (API, business rules, service, extractors with mocked HTTP, OCR, normalizers, debug store, Claude Code hooks); `make verify` reproduces CI; `make check-extraction` for live checks. Postman screenshots refresh pending (non-blocking) |
 
 ## What works today
 
@@ -40,11 +39,11 @@ Version 1 = Phases 1, 2, 4 and 6 for INE, CSF and comprobante de domicilio. Phas
 | PDF processing (PyMuPDF) | Metadata, page range, multi-signal OCR diagnosis; non-PDF content → 422 |
 | OCR (Tesseract) | Requested pages rendered at 400 DPI, cropped to the content area in color (no grayscale), PSM 3 with PSM 11 fallback; CURP / clave de elector look-alike errors corrected by position. Measurement in PROJECT_PLAN.md → Image Processing |
 | `from_page` / `to_page` | Respected by everything: text, OCR, rendered pages, the file sent to Gemini and the debug snapshot |
-| `debug_mode=true` | Any document, with or without OCR: original file, page images of the range, file and text each extractor received, request summary and result in `storage/debug/{request_id}/` |
+| `debug_mode=true` | Any document, with or without OCR: original file, page images of the range, file and text each extractor received, request summary, result and `validation.json` (rules + verdict) in `storage/debug/{request_id}/` |
 | CSF with `extractor=regex` | `CsfExtractor`, unit-tested and covered end-to-end with a generated PDF; real CSF verified by the developer in Postman (2026-10-25) |
 | Any type with `extractor=ai` | Gemini (reads the PDF of the requested pages, digital or scanned; default `gemini-3.6-flash`) or Groq (OCR text only; default `openai/gpt-oss-120b`), selectable per request; JSON mode; provider failures → 502/503/504 with a clear message. `ine` and `comprobante_domicilio` default to `ai` |
 | INE (scanned) | Gemini 7/7 fields (`gemini-2.5-flash` and `gemini-3.6-flash`; also 7/7, identical on 3 runs, reading the PDF instead of the crop); Groq 6–7/7 (was 0 before the OCR fixes). Developer verified a real INE in Postman with both providers |
-| Comprobante de domicilio | Real CFE bill verified by the developer with Groq and Gemini. 16 default fields (holder, itemized address, provider, service type and number, issue date, billed period, due date); dates as ISO. Synthetic samples: digital bill 16/16 and scanned bill 15/16 (no interior number printed) on Groq and Gemini |
+| Comprobante de domicilio | Real CFE bill verified by the developer with Groq and Gemini. 16 data fields plus the `documento_detectado` observation (holder, itemized address, provider, service type and number, issue date, billed period, due date); dates as ISO. Synthetic samples: digital bill 16/16 and scanned bill 15/16 (no interior number printed) on Groq and Gemini |
 | `ine`, `comprobante_domicilio` with `extractor=regex` | 422 — AI-only types (no regex extractor) |
 | Comprobante business validation | 7 rules (`comprobante.*`): age from issue date or billed period end, 5-digit postal code, detected document; service type and period order as warnings |
 | CSF business validation | 10 rules (`csf.*`), persona física and moral via `tipoPersona`; same verdict with regex and AI; max age 3 months on Mexico's date |
@@ -135,7 +134,6 @@ Through nginx, synthetic samples from `scripts/generate_samples.py`:
 - Retry with backoff on provider 503 (Gemini 3 models were saturated during testing) — today the client gets a clear 503 and must retry. Not for 429 daily quota: retrying cannot help there.
 - INE reference for `make check-extraction`: add the surnames from Gemini (`--provider gemini --print-reference`) when its quota allows (Groq differs by one OCR letter). Also run the INE validation once on Gemini.
 - Groq on the INE sample: about 1 run in 30 still returned a CURP different from the reference (seen once in `make check-extraction`, not reproduced in 28 later runs); a wrong CURP shows up in `validation` (check digit / birth date rules).
-- Phase 4 note: real CFE bills print no issue date (`fecha_emision` comes back null), so the document-age rule must fall back to `periodo_fin` (or the due date); the cut-off date ("corte a partir de") is not extracted yet.
 - Postman screenshots: none for the comprobante; the INE one predates the PDF input to Gemini (developer's own action).
 - Gemini free tier: 20 requests per day per model (enforcement is approximate: a 429 said ~8.9 h and a call passed 83 s later). Enabling billing on the Google AI project (developer's decision) removes it; until then, live tests should prefer Groq.
 

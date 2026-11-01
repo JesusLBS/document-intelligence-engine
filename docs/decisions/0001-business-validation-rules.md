@@ -36,9 +36,9 @@ Evidence from this project behind the choice: Groq returned the same INE date as
 
 ```text
 app/rules/
-├── base_rule.py        # Rule (abstract): code, description, severity, check(fields, today) -> RuleResult
+├── base_rule.py        # Rule (abstract): code, severity, inputs, reports_missing_data, check(fields, today) -> RuleResult
 ├── rule_result.py      # RuleResult: status passed | failed | skipped, message, fields involved
-├── common_rules.py     # Reusable, parameterized: RequiredFields, NotExpired, MaxAge, DocumentDetected
+├── common_rules.py     # Reusable, parameterized: RequiredFields, RequiredAnyOf, NotExpired, MaxAge, DocumentDetected, OnlyForPersonaFisica
 ├── ine_rules.py        # INE-specific: CurpFormat (structure + check digit), CurpMatchesBirthDate, ...
 ├── registry.py         # RULES_BY_DOCUMENT_TYPE = {"ine": [...], "csf": [...], "comprobante_domicilio": [...]}
 └── validation_engine.py# validate(document_type, fields, today) -> validation block

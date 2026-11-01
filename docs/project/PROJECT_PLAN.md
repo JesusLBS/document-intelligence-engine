@@ -367,12 +367,10 @@ Examples:
 
 ---
 
-## Validators
+## Validators and Rules
 
-Responsibilities:
-
-* Apply business rules
-* Verify extracted information
+* `app/validators/`: request validation only (marshmallow schema applied by a decorator).
+* `app/rules/`: business rules over the extracted fields, one registry list per document type ([ADR 0001](../decisions/0001-business-validation-rules.md)).
 
 ---
 
@@ -600,9 +598,7 @@ Possible extension (Phase 5, not planned):
 
 The current repository tree lives in [`README.md`](../../README.md) → "Estructura del repo" (single copy, to avoid drift).
 
-Planned additions (Phase 4):
-
-* Business-rule validators (location decided when Phase 4 starts; `app/validators/` today only holds request validation)
+Business rules live in `app/rules/` (Phase 4, done); `app/validators/` only holds request validation.
 
 Possible extensions (not planned): real processors in `app/processors/{image,excel,csv,word}/` (empty extension points today). INE and comprobante de domicilio stay AI-only: no regex extractors are planned for them.
 
